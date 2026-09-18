@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #14121f;
+  --surface: #1e1b2e;
+  --surface2: #262238;
+  --surface3: #2e2846;
+  --border: #342e4a;
+  --border-light: #3d3656;
+  --gold: #f0ac3f;
+  --gold-dim: #7a5b27;
+  --teal: #45d9c3;
+  --teal-dim: #1f5a50;
+  --success: #7bc97e;
+  --danger: #f2705c;
+  --text: #f3f0e8;
+  --muted: #9992ad;
+  --muted2: #6e6785;
+  --dotgrid: radial-gradient(circle, rgba(255, 255, 255, 0.055) 1px, transparent 1.4px);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-surface3: var(--surface3);
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-gold: var(--gold);
+  --color-gold-dim: var(--gold-dim);
+  --color-teal: var(--teal);
+  --color-teal-dim: var(--teal-dim);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-muted2: var(--muted2);
+  --font-display: var(--font-fraunces);
+  --font-ui: var(--font-space-grotesk);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--ink);
+  background-image: var(--dotgrid);
+  background-size: 22px 22px;
+  color: var(--text);
+  font-family: var(--font-ui), sans-serif;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display), serif;
+}
+
+.dotgrid-canvas {
+  background-image: var(--dotgrid);
+  background-size: 22px 22px;
+}

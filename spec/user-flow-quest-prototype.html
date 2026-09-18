@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Flow Quest — Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14121F; --surface:#1E1B2E; --surface2:#262238; --surface3:#2E2846;
+    --border:#342E4A; --border-light:#3D3656;
+    --gold:#F0AC3F; --gold-dim:#7A5B27;
+    --teal:#45D9C3; --teal-dim:#1F5A50;
+    --success:#7BC97E; --danger:#F2705C;
+    --text:#F3F0E8; --muted:#9992AD; --muted2:#6E6785;
+    --font-display:'Fraunces', serif; --font-ui:'Space Grotesk', sans-serif;
+    --dotgrid: radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1.4px);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--ink); background-image:var(--dotgrid); background-size:22px 22px;
+    color:var(--text); font-family:var(--font-ui); min-height:100vh; overflow-x:hidden;
+  }
+  h1,h2,h3,.font-display{ font-family:var(--font-display); }
+  button{ font-family:var(--font-ui); cursor:pointer; border:none; }
+  input,textarea,select{ font-family:var(--font-ui); }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 24px; background:rgba(20,18,31,0.9); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{
+    width:30px; height:30px; border-radius:8px;
+    background:linear-gradient(135deg, var(--teal), var(--gold));
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .brand-name{ font-family:var(--font-display); font-weight:600; font-size:17px; }
+  .role-toggle{ display:flex; background:var(--surface2); border-radius:20px; padding:3px; border:1px solid var(--border); }
+  .role-toggle button{
+    background:transparent; color:var(--muted); padding:7px 16px; border-radius:16px;
+    font-size:13px; font-weight:600; transition:all .15s;
+  }
+  .role-toggle button.active{ background:var(--teal); color:#0A2723; }
+  .reset-link{ background:none; color:var(--muted2); font-size:12px; text-decoration:underline; margin-left:14px; }
+
+  .view{ display:none; }
+  .view.active{ display:block; animation:fadein .25s ease; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ── Centered narrow screens (landing/register/brief) ── */
+  .centered-shell{ max-width:520px; margin:0 auto; padding:60px 20px 80px; }
+  .eyebrow{ font-size:12px; letter-spacing:1.5px; color:var(--teal); font-weight:600; margin-bottom:10px; text-transform:uppercase;}
+  .headline{ font-size:32px; font-weight:600; line-height:1.25; margin-bottom:10px; }
+  .sub{ color:var(--muted); font-size:15px; line-height:1.6; margin-bottom:28px; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:26px; }
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:500; }
+  .field input, .field select{
+    width:100%; background:var(--surface2); border:1px solid var(--border-light); color:var(--text);
+    padding:11px 13px; border-radius:9px; font-size:14.5px; outline:none; transition:border-color .15s;
+  }
+  .field input:focus, .field select:focus{ border-color:var(--teal); }
+  .field input::placeholder{ color:var(--muted2); }
+
+  .btn{ padding:12px 22px; border-radius:9px; font-weight:600; font-size:14.5px; transition:all .15s; }
+  .btn-primary{ background:var(--teal); color:#0A2723; }
+  .btn-primary:hover{ background:#5EE6D1; }
+  .btn-primary:disabled{ background:var(--surface3); color:var(--muted2); cursor:not-allowed; }
+  .btn-ghost{ background:var(--surface2); color:var(--text); border:1px solid var(--border-light); }
+  .btn-ghost:hover{ background:var(--surface3); }
+  .btn-gold{ background:var(--gold); color:#3A2607; }
+  .btn-gold:hover{ background:#F7C066; }
+  .btn-block{ width:100%; }
+  .btn-sm{ padding:8px 14px; font-size:13px; border-radius:7px; }
+
+  .hint-code{
+    display:inline-block; background:var(--surface2); border:1px dashed var(--border-light);
+    padding:3px 9px; border-radius:6px; font-size:13px; color:var(--gold); font-weight:600; letter-spacing:0.5px;
+  }
+  .error-msg{ color:var(--danger); font-size:13px; margin-top:6px; display:none; }
+
+  /* ── Session brief quest cards ── */
+  .quest-list{ display:flex; flex-direction:column; gap:12px; margin-top:22px; }
+  .quest-card{
+    display:flex; align-items:center; gap:14px; background:var(--surface);
+    border:1px solid var(--border); border-radius:12px; padding:16px 18px; transition:all .15s;
+  }
+  .quest-card.available{ cursor:pointer; border-color:var(--border-light); }
+  .quest-card.available:hover{ border-color:var(--teal); transform:translateX(3px); }
+  .quest-card.completed{ border-color:var(--success); background:rgba(123,201,126,0.06); }
+  .quest-card.locked{ opacity:0.5; }
+  .quest-num{
+    width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:15px; flex-shrink:0; background:var(--surface2); color:var(--muted);
+  }
+  .quest-card.available .quest-num{ background:var(--teal); color:#0A2723; }
+  .quest-card.completed .quest-num{ background:var(--success); color:#0C2A0D; }
+  .quest-body{ flex:1; }
+  .quest-title{ font-weight:600; font-size:14.5px; }
+  .quest-meta{ font-size:12px; color:var(--muted2); margin-top:2px; }
+  .quest-xp{ font-size:12px; color:var(--gold); font-weight:600; white-space:nowrap; }
+  .lock-icon{ color:var(--muted2); font-size:16px; }
+
+  /* ── Quest 1: multiple choice ── */
+  .mc-shell{ max-width:600px; margin:0 auto; padding:50px 20px 80px; }
+  .scenario-box{
+    background:var(--surface2); border-left:3px solid var(--teal); border-radius:0 10px 10px 0;
+    padding:16px 18px; margin-bottom:26px; font-size:14.5px; line-height:1.65; color:var(--text);
+  }
+  .scenario-box b{ color:var(--teal); }
+  .mc-options{ display:flex; flex-direction:column; gap:10px; margin:20px 0 26px; }
+  .mc-option{
+    background:var(--surface); border:1.5px solid var(--border-light); border-radius:10px;
+    padding:14px 16px; font-size:14.5px; text-align:left; color:var(--text); transition:all .15s;
+  }
+  .mc-option:hover{ border-color:var(--teal); }
+  .mc-option.selected{ border-color:var(--teal); background:rgba(69,217,195,0.08); }
+  .mc-option.correct{ border-color:var(--success); background:rgba(123,201,126,0.1); }
+  .mc-option.incorrect{ border-color:var(--danger); background:rgba(242,112,92,0.08); }
+  .mc-feedback{ padding:14px 16px; border-radius:10px; font-size:14px; line-height:1.6; margin-bottom:20px; display:none; }
+  .mc-feedback.show{ display:block; }
+  .mc-feedback.ok{ background:rgba(123,201,126,0.1); border:1px solid var(--success); }
+  .mc-feedback.soft{ background:rgba(240,172,63,0.1); border:1px solid var(--gold); }
+
+  /* ── Quest builder layout ── */
+  .builder-shell{ display:flex; flex-direction:column; height:calc(100vh - 61px); }
+  .builder-topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:12px 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  .scenario-pill{ font-size:13px; color:var(--muted); }
+  .scenario-pill b{ color:var(--text); }
+  .timer-box{
+    display:flex; align-items:center; gap:8px; background:var(--surface2); padding:7px 14px;
+    border-radius:20px; border:1px solid var(--border-light);
+  }
+  .timer-label{ font-size:11px; color:var(--muted2); letter-spacing:0.5px; text-transform:uppercase; }
+  .timer-value{ font-family:var(--font-ui); font-weight:700; font-size:16px; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .timer-value.low{ color:var(--danger); animation:pulse 1s infinite; }
+  @keyframes pulse{ 50%{opacity:0.4;} }
+  .builder-actions{ display:flex; gap:8px; }
+
+  .builder-main{ flex:1; display:flex; overflow:hidden; }
+  .node-rail{
+    width:210px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border);
+    padding:16px 14px; overflow-y:auto;
+  }
+  .rail-title{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted2); margin-bottom:12px; font-weight:600; }
+  .lib-chip{
+    display:flex; align-items:center; gap:9px; background:var(--surface2); border:1px solid var(--border-light);
+    border-radius:9px; padding:10px 11px; margin-bottom:8px; cursor:grab; transition:all .15s;
+  }
+  .lib-chip:hover{ border-color:var(--teal); transform:translateX(2px); }
+  .lib-chip:active{ cursor:grabbing; }
+  .chip-icon{ width:26px; height:26px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .chip-text{ flex:1; }
+  .chip-label{ font-size:13px; font-weight:600; display:block; }
+  .chip-type{ font-size:10px; color:var(--muted2); text-transform:uppercase; letter-spacing:0.5px; }
+
+  .type-screen .chip-icon, .flow-node.type-screen .node-icon{ background:var(--teal-dim); color:var(--teal); }
+  .type-system .chip-icon, .flow-node.type-system .node-icon{ background:#3A3560; color:#B8AEFF; }
+  .type-outcome .chip-icon, .flow-node.type-outcome .node-icon{ background:var(--gold-dim); color:var(--gold); }
+  .type-error .chip-icon, .flow-node.type-error .node-icon{ background:#5A2A24; color:var(--danger); }
+
+  .canvas-wrap{ flex:1; position:relative; overflow:auto; }
+  .canvas{
+    position:relative; width:920px; height:1700px; margin:0 auto;
+    background-image:var(--dotgrid); background-size:22px 22px;
+  }
+  .canvas-hint{
+    position:absolute; top:20px; left:20px; font-size:12.5px; color:var(--muted2);
+    background:rgba(30,27,46,0.85); padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+    max-width:280px; line-height:1.5; pointer-events:none;
+  }
+  svg.edges{ position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+  .flow-edge{ stroke:var(--teal); stroke-width:2; fill:none; }
+
+  .flow-node{
+    position:absolute; width:168px; background:var(--surface); border:1.5px solid var(--border-light);
+    border-radius:10px; padding:9px 11px; user-select:none; box-shadow:0 4px 12px rgba(0,0,0,0.25);
+  }
+  .flow-node .node-row{ display:flex; align-items:center; gap:8px; }
+  .node-handle-out{
+    position:absolute; left:50%; bottom:-9px; transform:translateX(-50%);
+    width:17px; height:17px; border-radius:50%; background:var(--teal);
+    border:3px solid var(--ink); cursor:crosshair; z-index:6; transition:transform .12s;
+  }
+  .node-handle-out:hover{ transform:translateX(-50%) scale(1.3); }
+  .node-handle-out::after{
+    content:''; position:absolute; inset:-10px; /* larger invisible hit-area */
+  }
+  .node-handle-in{
+    position:absolute; left:50%; top:-7px; transform:translateX(-50%);
+    width:11px; height:11px; border-radius:50%; background:var(--surface3);
+    border:2px solid var(--border-light); pointer-events:none; z-index:5;
+  }
+  .flow-edge.temp-edge{ stroke:var(--gold); stroke-dasharray:5,4; opacity:0.9; }
+  .node-icon{ width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:12px; }
+  .node-label{ font-size:13px; font-weight:600; flex:1; }
+  .node-del{
+    background:transparent; color:var(--muted2); font-size:15px; line-height:1; padding:2px 4px;
+    border-radius:4px; flex-shrink:0;
+  }
+  .node-del:hover{ background:var(--surface3); color:var(--danger); }
+  .node-type-tag{ font-size:9.5px; color:var(--muted2); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-top:3px; }
+
+  .locked-banner{
+    position:absolute; top:0; left:0; right:0; background:rgba(242,112,92,0.15); border-bottom:1px solid var(--danger);
+    color:#FFD9D2; text-align:center; padding:10px; font-size:13.5px; font-weight:600; z-index:20; display:none;
+  }
+  .locked-banner.show{ display:block; }
+
+  /* ── Result view ── */
+  .result-shell{ max-width:600px; margin:0 auto; padding:50px 20px 90px; text-align:center; }
+  .badge-medal{
+    width:92px; height:92px; border-radius:50%; margin:0 auto 18px; display:flex; align-items:center;
+    justify-content:center; font-size:38px; border:3px solid var(--gold);
+    background:radial-gradient(circle, rgba(240,172,63,0.18), transparent 70%);
+  }
+  .badge-tier{ font-family:var(--font-display); font-size:24px; font-weight:600; color:var(--gold); margin-bottom:8px; }
+  .result-message{ color:var(--muted); font-size:14.5px; line-height:1.6; margin-bottom:26px; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .score-meter-wrap{ margin-bottom:8px; }
+  .score-meter-label{ display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:7px; }
+  .score-meter-track{ height:10px; background:var(--surface2); border-radius:6px; overflow:hidden; }
+  .score-meter-fill{ height:100%; background:linear-gradient(90deg, var(--teal), var(--gold)); border-radius:6px; transition:width .6s ease; }
+  .score-note{ font-size:12px; color:var(--muted2); margin-top:6px; text-align:left; }
+
+  .detail-toggle{ background:none; color:var(--teal); font-size:13px; text-decoration:underline; margin:18px 0; }
+  .detail-table{ display:none; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:24px; }
+  .detail-table.show{ display:block; }
+  .detail-row{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+  .detail-row:last-child{ border-bottom:none; font-weight:700; padding-top:10px; }
+  .detail-row span:last-child{ color:var(--muted); font-variant-numeric:tabular-nums; }
+  .detail-row.pending span:last-child{ color:var(--muted2); font-style:italic; }
+
+  .reflection-box{ text-align:left; margin-top:10px; }
+  .reflection-box label{ display:block; font-size:13.5px; font-weight:600; margin-bottom:8px; }
+  .reflection-box textarea{
+    width:100%; background:var(--surface2); border:1px solid var(--border-light); color:var(--text);
+    padding:12px 13px; border-radius:9px; font-size:14px; min-height:90px; resize:vertical; outline:none;
+  }
+  .reflection-box textarea:focus{ border-color:var(--teal); }
+  .reflection-saved{ display:none; background:rgba(123,201,126,0.1); border:1px solid var(--success); color:var(--success); padding:10px 14px; border-radius:9px; font-size:13.5px; margin-top:12px; }
+  .reflection-saved.show{ display:block; }
+
+  /* ── Admin views ── */
+  .admin-shell{ max-width:1080px; margin:0 auto; padding:36px 24px 80px; }
+  .admin-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:24px 0 30px; }
+  .stat-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; }
+  .stat-num{ font-family:var(--font-display); font-size:28px; font-weight:600; color:var(--teal); }
+  .stat-label{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+
+  table.admin-table{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  table.admin-table th{ text-align:left; background:var(--surface2); color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; padding:12px 16px; font-weight:600; }
+  table.admin-table td{ padding:13px 16px; font-size:14px; border-top:1px solid var(--border); }
+  table.admin-table tr.clickable{ cursor:pointer; transition:background .15s; }
+  table.admin-table tr.clickable:hover{ background:var(--surface2); }
+  .status-pill{ font-size:11.5px; padding:3px 10px; border-radius:12px; font-weight:600; }
+  .status-pill.completed{ background:rgba(123,201,126,0.15); color:var(--success); }
+  .status-pill.progress{ background:rgba(240,172,63,0.15); color:var(--gold); }
+  .new-tag{ background:var(--teal); color:#0A2723; font-size:10px; padding:2px 7px; border-radius:6px; font-weight:700; margin-left:8px; }
+
+  .sub-viewer{ display:grid; grid-template-columns:1.3fr 1fr; gap:24px; align-items:start; }
+  .sub-flow-box{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px; min-height:280px; position:relative; overflow-x:auto; }
+  .readonly-chain{ display:flex; align-items:center; gap:0; flex-wrap:wrap; }
+  .ro-chip{
+    display:flex; align-items:center; gap:7px; background:var(--surface2); border:1px solid var(--border-light);
+    border-radius:9px; padding:9px 13px; font-size:12.5px; font-weight:600; white-space:nowrap;
+  }
+  .ro-arrow{ color:var(--muted2); margin:0 6px; font-size:15px; }
+  .sub-side .card{ margin-bottom:14px; }
+  .rationale-quote{ font-style:italic; color:var(--text); font-size:14px; line-height:1.6; }
+  .back-link{ background:none; color:var(--muted); font-size:13.5px; margin-bottom:18px; display:inline-flex; align-items:center; gap:6px; }
+  .back-link:hover{ color:var(--text); }
+
+  @media (max-width: 760px){
+    .admin-stats{ grid-template-columns:repeat(2,1fr); }
+    .sub-viewer{ grid-template-columns:1fr; }
+    .node-rail{ width:150px; }
+    .canvas{ width:1100px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">🧭</div>
+    <div class="brand-name">User Flow Quest</div>
+  </div>
+  <div style="display:flex; align-items:center;">
+    <div class="role-toggle">
+      <button id="roleParticipant" class="active" onclick="setRole('participant')">Peserta</button>
+      <button id="roleAdmin" onclick="setRole('admin')">Admin</button>
+    </div>
+    <button class="reset-link" onclick="resetPrototype()">Mulai ulang</button>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: LANDING ══════════ -->
+<div class="view active" id="view-landing">
+  <div class="centered-shell">
+    <div class="eyebrow">Mulai Quest</div>
+    <h1 class="headline">Masuk pakai kode session</h1>
+    <p class="sub">Tanyakan kode session ke mentor kamu, lalu masukkan di bawah untuk memulai. Contoh: <span class="hint-code">UFQ-0926</span></p>
+    <div class="card">
+      <div class="field">
+        <label for="sessionCode">Kode Session</label>
+        <input type="text" id="sessionCode" placeholder="UFQ-0926" value="UFQ-0926">
+        <div class="error-msg" id="codeError">Kode session tidak ditemukan. Coba cek lagi ke mentor kamu.</div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="joinSession()">Gabung Session →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: REGISTER ══════════ -->
+<div class="view" id="view-register">
+  <div class="centered-shell">
+    <div class="eyebrow">Session: User Flow Quest — September Batch</div>
+    <h1 class="headline">Kenalan dulu, yuk</h1>
+    <p class="sub">Isi data singkat ini sebelum mulai quest-nya.</p>
+    <div class="card">
+      <div class="field">
+        <label for="regName">Nama Lengkap</label>
+        <input type="text" id="regName" placeholder="Nama kamu">
+      </div>
+      <div class="field">
+        <label for="regSchool">Asal Sekolah</label>
+        <input type="text" id="regSchool" placeholder="SMKN 2 Sumedang" value="SMKN 2 Sumedang">
+      </div>
+      <div class="field">
+        <label for="regGroup">Kelompok / Tim</label>
+        <input type="text" id="regGroup" placeholder="misalnya: Tim UI/UX">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="submitRegister()">Lanjut ke Session Brief →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: SESSION BRIEF ══════════ -->
+<div class="view" id="view-brief">
+  <div class="centered-shell">
+    <div class="eyebrow">Halo, <span id="briefName">Peserta</span> 👋</div>
+    <h1 class="headline">User Flow Quest</h1>
+    <p class="sub">Lima quest membawa kamu dari memahami tujuan pengguna sampai menyusun flow lengkap dengan alasannya. Selesaikan berurutan untuk membuka quest berikutnya.</p>
+    <div class="quest-list" id="questList"></div>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: QUEST 1 — MULTIPLE CHOICE ══════════ -->
+<div class="view" id="view-quest1">
+  <div class="mc-shell">
+    <div class="eyebrow">Quest 1 · Find the Goal</div>
+    <h1 class="headline" style="font-size:26px;">Apa tujuan sebenarnya dari pengguna ini?</h1>
+    <div class="scenario-box">
+      <b>Skenario:</b> Rani membuka aplikasi sekolah karena ingin bergabung dengan Klub Fotografi. Ia perlu memasukkan Nomor Induk Siswa untuk bisa mendaftar.
+    </div>
+    <div class="mc-options" id="mcOptions"></div>
+    <div class="mc-feedback" id="mcFeedback"></div>
+    <button class="btn btn-primary" id="mcConfirmBtn" onclick="confirmMcAnswer()" disabled>Konfirmasi Jawaban</button>
+    <button class="btn btn-gold" id="mcContinueBtn" style="display:none;" onclick="finishQuest1()">Lanjut ke Quest 2 →</button>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: QUEST 2 — FLOW BUILDER ══════════ -->
+<div class="view" id="view-quest2">
+  <div class="builder-shell">
+    <div class="locked-banner" id="lockedBanner">⏱️ Waktu habis — flow kamu otomatis dikunci dan dikirim untuk dinilai.</div>
+    <div class="builder-topbar">
+      <div class="scenario-pill"><b>Quest 2 · Build the Path</b> — Rani ingin <b>mendaftar Klub Fotografi</b> lewat aplikasi sekolah.</div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div class="timer-box">
+          <span class="timer-label">Sisa Waktu</span>
+          <span class="timer-value" id="timerDisplay">5:00</span>
+        </div>
+        <div class="builder-actions">
+          <button class="btn btn-ghost btn-sm" onclick="resetFlowCanvas()">Reset Flow</button>
+          <button class="btn btn-ghost btn-sm" onclick="validateFlowManual()">Cek Flow</button>
+          <button class="btn btn-primary btn-sm" onclick="submitFlow(false)">Kirim Flow →</button>
+        </div>
+      </div>
+    </div>
+    <div class="builder-main">
+      <div class="node-rail">
+        <div class="rail-title">Node Library</div>
+        <div id="nodeLibraryList"></div>
+        <div class="rail-title" style="margin-top:20px;">Cara Main</div>
+        <p style="font-size:12px; color:var(--muted2); line-height:1.6;">
+          1. Seret node dari sini ke kanvas<br>
+          2. Tarik garis dari titik teal di bawah node ke node tujuan<br>
+          3. Susun dari atas ke bawah sampai flow-nya masuk akal, lalu kirim
+        </p>
+      </div>
+      <div class="canvas-wrap">
+        <div class="canvas" id="flowCanvas">
+          <div class="canvas-hint">💡 Seret node dari kiri ke sini. Tarik garis dari titik teal di bawah node ke arah node tujuan untuk menyambungkan.</div>
+          <svg class="edges" id="flowEdges"><defs>
+            <marker id="arrowhead" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+              <polygon points="0 0, 8 3.5, 0 7" fill="#45D9C3"></polygon>
+            </marker>
+            <marker id="arrowhead-temp" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+              <polygon points="0 0, 8 3.5, 0 7" fill="#F0AC3F"></polygon>
+            </marker>
+          </defs></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PARTICIPANT: RESULT ══════════ -->
+<div class="view" id="view-result">
+  <div class="result-shell">
+    <div class="badge-medal" id="badgeMedal">🏅</div>
+    <div class="badge-tier" id="badgeTier">Path Finder</div>
+    <p class="sub" id="resultSubline" style="margin-bottom:20px;">Quest 2 selesai dikirim.</p>
+    <div class="result-message" id="resultMessage"></div>
+
+    <div class="score-meter-wrap">
+      <div class="score-meter-label"><span>Skor Flow Kamu</span><span id="scoreMeterText">0 / 90</span></div>
+      <div class="score-meter-track"><div class="score-meter-fill" id="scoreMeterFill" style="width:0%;"></div></div>
+      <div class="score-note">Skor akan bertambah setelah kamu isi alasan di bawah — reasoning kamu bagian dari penilaian juga, lho.</div>
+    </div>
+
+    <button class="detail-toggle" onclick="toggleDetail()">Lihat rincian penilaian (versi mentor) ▾</button>
+    <div class="detail-table" id="detailTable"></div>
+
+    <div class="reflection-box">
+      <label>Kenapa kamu memilih flow ini? (jelaskan alasannya)</label>
+      <textarea id="reflectionInput" placeholder="Contoh: Saya menempatkan konfirmasi sebelum success supaya user bisa cek data dulu sebelum dikirim..."></textarea>
+      <button class="btn btn-gold" style="margin-top:12px;" onclick="submitReflection()">Kirim Alasan</button>
+      <div class="reflection-saved" id="reflectionSaved">✓ Alasan kamu tersimpan dan sudah masuk ke penilaian akhir.</div>
+    </div>
+
+    <button class="btn btn-ghost btn-block" style="margin-top:26px;" onclick="backToBrief()">← Kembali ke Session Brief</button>
+  </div>
+</div>
+
+<!-- ══════════ ADMIN: DASHBOARD ══════════ -->
+<div class="view" id="view-admin-dashboard">
+  <div class="admin-shell">
+    <div class="eyebrow">Session Aktif</div>
+    <h1 class="headline">User Flow Quest — September Batch</h1>
+    <p class="sub">09:00–12:00 · Batas waktu personal 60 menit sejak mulai</p>
+
+    <div class="admin-stats">
+      <div class="stat-card"><div class="stat-num" id="statTotal">6</div><div class="stat-label">Total Peserta</div></div>
+      <div class="stat-card"><div class="stat-num" id="statCompleted">4</div><div class="stat-label">Selesai</div></div>
+      <div class="stat-card"><div class="stat-num" id="statProgress">2</div><div class="stat-label">Sedang Mengerjakan</div></div>
+      <div class="stat-card"><div class="stat-num" id="statAvg">87</div><div class="stat-label">Rata-rata Skor</div></div>
+    </div>
+
+    <table class="admin-table">
+      <thead><tr><th>Peserta</th><th>Progress</th><th>Waktu</th><th>Skor</th><th>Status</th></tr></thead>
+      <tbody id="adminTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════ ADMIN: SUBMISSION VIEWER ══════════ -->
+<div class="view" id="view-admin-submission">
+  <div class="admin-shell">
+    <button class="back-link" onclick="goToView('view-admin-dashboard')">← Kembali ke Dashboard</button>
+    <div class="eyebrow" id="subEyebrow">Submission Detail</div>
+    <h1 class="headline" id="subName" style="font-size:26px;">Nama Peserta</h1>
+    <div class="sub-viewer" style="margin-top:20px;">
+      <div class="sub-flow-box">
+        <div class="rail-title" style="margin-bottom:14px;">Flow yang Disusun</div>
+        <div class="readonly-chain" id="subFlowChain"></div>
+      </div>
+      <div class="sub-side">
+        <div class="card">
+          <div class="rail-title" style="margin-bottom:10px;">Kenapa flow ini?</div>
+          <p class="rationale-quote" id="subRationale">—</p>
+        </div>
+        <div class="card">
+          <div class="rail-title" style="margin-bottom:10px;">Rincian Skor</div>
+          <div id="subScoreDetail"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════ GLOBAL STATE ══════════════════════════ */
+let currentRole = 'participant';
+let participantData = { name:'', school:'', group:'' };
+let questState = { q1:'available', q2:'locked', q3:'locked', q4:'locked', q5:'locked' };
+let mcSelected = null;
+let mcAnswered = false;
+
+const NODE_LIBRARY = [
+  { kind:'home', label:'Home', type:'SCREEN', icon:'🏠' },
+  { kind:'clublist', label:'Club List', type:'SCREEN', icon:'📋' },
+  { kind:'clubdetail', label:'Club Detail', type:'SCREEN', icon:'📄' },
+  { kind:'regform', label:'Registration Form', type:'SCREEN', icon:'📝' },
+  { kind:'confirmation', label:'Confirmation', type:'SYSTEM', icon:'⚙️' },
+  { kind:'success', label:'Success', type:'OUTCOME', icon:'✅' },
+  { kind:'error', label:'Error', type:'ERROR', icon:'⚠️' },
+];
+
+let canvasNodes = [];
+let connections = [];
+let nodeIdCounter = 0;
+let dragState = null;
+let connectDrag = null;
+let canvasLocked = false;
+
+let timerInterval = null;
+let secondsLeft = 300; // 5 minutes — demo compression, disclosed to reviewer
+let questStartTime = null;
+
+let latestValidation = null;
+let reflectionText = '';
+
+let adminParticipants = [
+  { name:'Henra Aditia Saputra', school:'SMKN 2 Sumedang', progress:'4/4', time:'46m', score:88, status:'Completed',
+    flow:['Home','Club List','Club Detail','Registration Form','Confirmation','Success'],
+    rationale:'Saya taruh Confirmation sebelum Success biar user yakin dulu datanya benar sebelum dianggap selesai.',
+    breakdown:{goal:20, flow:24, logic:18, edgecase:12, simplicity:9, rationale:9, total:92} },
+  { name:'Rizka Adistianti Ismail', school:'SMKN 2 Sumedang', progress:'3/4', time:'39m', score:null, status:'In Progress' },
+  { name:'Shelva Demiya', school:'SMKN 2 Sumedang', progress:'4/4', time:'51m', score:91, status:'Completed',
+    flow:['Home','Club List','Club Detail','Registration Form','Confirmation','Success','Error'],
+    rationale:'Saya tambahin jalur Error juga soalnya form pendaftaran biasanya suka ada yang salah isi data.',
+    breakdown:{goal:20, flow:25, logic:20, edgecase:15, simplicity:8, rationale:9, total:97} },
+  { name:'Siti Nur Mirra', school:'SMKN 2 Sumedang', progress:'2/4', time:'22m', score:null, status:'In Progress' },
+  { name:'Aliya Sinta', school:'SMKN 2 Sumedang', progress:'4/4', time:'44m', score:84, status:'Completed',
+    flow:['Home','Club Detail','Registration Form','Success'],
+    rationale:'Saya fokus ke jalur paling langsung dulu biar user nggak kelamaan sebelum daftar.',
+    breakdown:{goal:20, flow:25, logic:12, edgecase:6, simplicity:10, rationale:11, total:84} },
+  { name:'Kirana Kalish Haipa', school:'SMKN 2 Sumedang', progress:'4/4', time:'42m', score:87, status:'Completed',
+    flow:['Home','Club List','Club Detail','Registration Form','Confirmation','Success'],
+    rationale:'Saya menempatkan Confirmation sebelum Success supaya user dapat mengecek data sebelum dikirim.',
+    breakdown:{goal:20, flow:21, logic:17, edgecase:12, simplicity:8, rationale:9, total:87} },
+];
+const ADMIN_PARTICIPANTS_PRISTINE = JSON.parse(JSON.stringify(adminParticipants));
+
+/* ══════════════════════════ VIEW ROUTING ══════════════════════════ */
+function goToView(id){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+
+function setRole(role){
+  currentRole = role;
+  document.getElementById('roleParticipant').classList.toggle('active', role==='participant');
+  document.getElementById('roleAdmin').classList.toggle('active', role==='admin');
+  if(role === 'admin'){
+    renderAdminDashboard();
+    goToView('view-admin-dashboard');
+  } else {
+    goToView('view-landing');
+  }
+}
+
+function resetPrototype(){
+  clearInterval(timerInterval);
+  canvasNodes = []; connections = []; nodeIdCounter = 0; connectDrag = null; dragState = null;
+  canvasLocked = false; secondsLeft = 300; mcSelected = null; mcAnswered = false;
+  questState = { q1:'available', q2:'locked', q3:'locked', q4:'locked', q5:'locked' };
+  participantData = { name:'', school:'', group:'' };
+  adminParticipants = JSON.parse(JSON.stringify(ADMIN_PARTICIPANTS_PRISTINE));
+  document.getElementById('sessionCode').value = 'UFQ-0926';
+  setRole('participant');
+}
+
+/* ══════════════════════════ LANDING / REGISTER ══════════════════════════ */
+function joinSession(){
+  const code = document.getElementById('sessionCode').value.trim().toUpperCase();
+  const errEl = document.getElementById('codeError');
+  if(code === 'UFQ-0926'){
+    errEl.style.display = 'none';
+    goToView('view-register');
+  } else {
+    errEl.style.display = 'block';
+  }
+}
+
+function submitRegister(){
+  const name = document.getElementById('regName').value.trim();
+  if(!name){
+    document.getElementById('regName').style.borderColor = 'var(--danger)';
+    return;
+  }
+  participantData.name = name;
+  participantData.school = document.getElementById('regSchool').value.trim() || 'SMKN 2 Sumedang';
+  participantData.group = document.getElementById('regGroup').value.trim();
+  document.getElementById('briefName').textContent = name.split(' ')[0];
+  renderQuestList();
+  goToView('view-brief');
+}
+
+/* ══════════════════════════ SESSION BRIEF ══════════════════════════ */
+const QUEST_DEFS = [
+  { id:'q1', title:'Find the Goal', meta:'Multiple Choice · 1 pertanyaan', xp:'+20 XP' },
+  { id:'q2', title:'Build the Path', meta:'Flow Builder · 5 menit', xp:'+50 XP' },
+  { id:'q3', title:'Add the Logic', meta:'Flow Builder + Decision', xp:'+50 XP' },
+  { id:'q4', title:'Break the Flow', meta:'Flow Builder + Event', xp:'+50 XP' },
+  { id:'q5', title:'Final Challenge', meta:'Flow + Written Rationale', xp:'+100 XP' },
+];
+
+function renderQuestList(){
+  const list = document.getElementById('questList');
+  list.innerHTML = '';
+  QUEST_DEFS.forEach((q, i) => {
+    const state = questState[q.id];
+    const div = document.createElement('div');
+    div.className = 'quest-card ' + state;
+    let numContent = (i+1);
+    if(state === 'completed') numContent = '✓';
+    let rightContent = `<span class="quest-xp">${q.xp}</span>`;
+    if(state === 'locked') rightContent = `<span class="lock-icon">🔒</span>`;
+    div.innerHTML = `
+      <div class="quest-num">${numContent}</div>
+      <div class="quest-body">
+        <div class="quest-title">${q.title}</div>
+        <div class="quest-meta">${state === 'locked' ? (i>=2 ? 'Tersedia di versi lengkap' : 'Selesaikan quest sebelumnya dulu') : q.meta}</div>
+      </div>
+      ${rightContent}
+    `;
+    if(state === 'available'){
+      div.onclick = () => openQuest(q.id);
+    } else if(state === 'completed' && q.id === 'q2'){
+      div.onclick = () => goToView('view-result');
+    }
+    list.appendChild(div);
+  });
+}
+
+function openQuest(id){
+  if(id === 'q1'){
+    renderQuest1();
+    goToView('view-quest1');
+  } else if(id === 'q2'){
+    startQuest2();
+    goToView('view-quest2');
+  }
+}
+
+function backToBrief(){
+  renderQuestList();
+  goToView('view-brief');
+}
+
+/* ══════════════════════════ QUEST 1: MULTIPLE CHOICE ══════════════════════════ */
+const MC_OPTIONS = [
+  { text:'Melihat informasi tentang Klub Fotografi', correct:false },
+  { text:'Berhasil mendaftar menjadi anggota Klub Fotografi', correct:true },
+  { text:'Memasukkan Nomor Induk Siswa dengan benar', correct:false },
+  { text:'Membuka aplikasi sekolah', correct:false },
+];
+
+function renderQuest1(){
+  mcSelected = null; mcAnswered = false;
+  const opt = document.getElementById('mcOptions');
+  opt.innerHTML = '';
+  MC_OPTIONS.forEach((o, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'mc-option';
+    btn.textContent = o.text;
+    btn.onclick = () => selectMcOption(i);
+    btn.id = 'mcopt-' + i;
+    opt.appendChild(btn);
+  });
+  document.getElementById('mcFeedback').className = 'mc-feedback';
+  document.getElementById('mcConfirmBtn').style.display = 'inline-block';
+  document.getElementById('mcConfirmBtn').disabled = true;
+  document.getElementById('mcContinueBtn').style.display = 'none';
+}
+
+function selectMcOption(i){
+  if(mcAnswered) return;
+  mcSelected = i;
+  MC_OPTIONS.forEach((o, idx) => {
+    document.getElementById('mcopt-' + idx).classList.toggle('selected', idx === i);
+  });
+  document.getElementById('mcConfirmBtn').disabled = false;
+}
+
+function confirmMcAnswer(){
+  if(mcSelected === null) return;
+  mcAnswered = true;
+  const isCorrect = MC_OPTIONS[mcSelected].correct;
+  MC_OPTIONS.forEach((o, idx) => {
+    const el = document.getElementById('mcopt-' + idx);
+    if(o.correct) el.classList.add('correct');
+    else if(idx === mcSelected) el.classList.add('incorrect');
+  });
+  const fb = document.getElementById('mcFeedback');
+  if(isCorrect){
+    fb.className = 'mc-feedback ok show';
+    fb.innerHTML = '<b>Tepat!</b> Tujuan Rani bukan sekadar melihat info atau mengisi form — dia ingin transaksinya (pendaftaran) benar-benar berhasil. Semua langkah di flow nanti harus mengarah ke situ.';
+  } else {
+    fb.className = 'mc-feedback soft show';
+    fb.innerHTML = '<b>Belum tepat, tapi dekat.</b> Yang kamu pilih itu salah satu <i>langkah</i> menuju tujuan, bukan tujuan akhirnya. Tujuan sebenarnya Rani adalah <b>berhasil mendaftar</b> — semua langkah lain cuma cara menuju ke sana.';
+  }
+  document.getElementById('mcConfirmBtn').style.display = 'none';
+  document.getElementById('mcContinueBtn').style.display = 'inline-block';
+}
+
+function finishQuest1(){
+  questState.q1 = 'completed';
+  questState.q2 = 'available';
+  backToBrief();
+}
+
+/* ══════════════════════════ QUEST 2: FLOW BUILDER ══════════════════════════ */
+function startQuest2(){
+  canvasNodes = []; connections = []; nodeIdCounter = 0; connectDrag = null; dragState = null;
+  canvasLocked = false; secondsLeft = 300; questStartTime = Date.now();
+  document.getElementById('lockedBanner').classList.remove('show');
+  renderNodeLibrary();
+  renderFlowCanvas();
+  clearInterval(timerInterval);
+  updateTimerDisplay();
+  timerInterval = setInterval(tickTimer, 1000);
+}
+
+function renderNodeLibrary(){
+  const rail = document.getElementById('nodeLibraryList');
+  rail.innerHTML = '';
+  NODE_LIBRARY.forEach(def => {
+    const chip = document.createElement('div');
+    chip.className = 'lib-chip type-' + def.type.toLowerCase();
+    chip.draggable = true;
+    chip.innerHTML = `<div class="chip-icon">${def.icon}</div><div class="chip-text"><span class="chip-label">${def.label}</span><span class="chip-type">${def.type}</span></div>`;
+    chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', def.kind); });
+    rail.appendChild(chip);
+  });
+}
+
+function tickTimer(){
+  if(canvasLocked) return;
+  secondsLeft--;
+  updateTimerDisplay();
+  if(secondsLeft <= 0){
+    clearInterval(timerInterval);
+    lockCanvasAndSubmit();
+  }
+}
+
+function updateTimerDisplay(){
+  const m = Math.floor(secondsLeft / 60);
+  const s = secondsLeft % 60;
+  const el = document.getElementById('timerDisplay');
+  el.textContent = m + ':' + String(s).padStart(2,'0');
+  el.classList.toggle('low', secondsLeft <= 30);
+}
+
+function lockCanvasAndSubmit(){
+  canvasLocked = true;
+  document.getElementById('lockedBanner').classList.add('show');
+  setTimeout(() => submitFlow(true), 900);
+}
+
+const canvasEl = () => document.getElementById('flowCanvas');
+const NODE_W = 168, NODE_H = 58;
+
+(function setupCanvasDragDrop(){
+  const wrap = document.getElementById('flowCanvas');
+  if(!wrap) return;
+  wrap.addEventListener('dragover', e => e.preventDefault());
+  wrap.addEventListener('drop', e => {
+    e.preventDefault();
+    if(canvasLocked) return;
+    const kind = e.dataTransfer.getData('text/plain');
+    const rect = wrap.getBoundingClientRect();
+    const x = e.clientX - rect.left - NODE_W/2 + wrap.scrollLeft;
+    const y = e.clientY - rect.top - NODE_H/2 + wrap.scrollTop;
+    addNode(kind, Math.max(0,x), Math.max(0,y));
+  });
+})();
+
+function addNode(kind, x, y){
+  const def = NODE_LIBRARY.find(n => n.kind === kind);
+  if(!def) return;
+  canvasNodes.push({ id:'n'+(nodeIdCounter++), kind:def.kind, label:def.label, type:def.type, icon:def.icon, x, y });
+  renderFlowCanvas();
+}
+
+function deleteNode(id){
+  canvasNodes = canvasNodes.filter(n => n.id !== id);
+  connections = connections.filter(c => c.from !== id && c.to !== id);
+  renderFlowCanvas();
+}
+
+function addConnection(fromId, toId){
+  if(fromId === toId) return;
+  if(connections.some(c => c.from === fromId && c.to === toId)) return;
+  connections.push({ from:fromId, to:toId });
+}
+
+function resetFlowCanvas(){
+  if(canvasLocked) return;
+  canvasNodes = []; connections = [];
+  renderFlowCanvas();
+}
+
+function renderFlowCanvas(){
+  const canvas = canvasEl();
+  canvas.querySelectorAll('.flow-node').forEach(n => n.remove());
+  const hint = canvas.querySelector('.canvas-hint');
+  if(hint) hint.style.display = canvasNodes.length > 0 ? 'none' : 'block';
+  canvasNodes.forEach(node => {
+    const el = document.createElement('div');
+    el.className = 'flow-node type-' + node.type.toLowerCase();
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    el.dataset.id = node.id;
+    el.innerHTML = `
+      <div class="node-handle-in" aria-hidden="true"></div>
+      <div class="node-row">
+        <div class="node-icon">${node.icon}</div>
+        <div class="node-label">${node.label}</div>
+        <button class="node-del">×</button>
+      </div>
+      <span class="node-type-tag">${node.type}</span>
+      <div class="node-handle-out" title="Tarik untuk menyambungkan ke node lain"></div>
+    `;
+    el.querySelector('.node-del').addEventListener('click', e => { e.stopPropagation(); deleteNode(node.id); });
+
+    // Move-drag: pointerdown anywhere on the node body (not handle/delete) repositions it
+    el.addEventListener('pointerdown', e => {
+      if(canvasLocked) return;
+      if(e.target.closest('.node-del') || e.target.closest('.node-handle-out')) return;
+      dragState = { id:node.id, startX:e.clientX, startY:e.clientY, origX:node.x, origY:node.y };
+      e.preventDefault();
+    });
+
+    // Connect-drag: pointerdown on the output handle starts drawing a line to another node
+    el.querySelector('.node-handle-out').addEventListener('pointerdown', e => {
+      if(canvasLocked) return;
+      e.stopPropagation();
+      e.preventDefault();
+      connectDrag = { fromId: node.id, x1: node.x + NODE_W/2, y1: node.y + NODE_H };
+      const svg = document.getElementById('flowEdges');
+      const temp = document.createElementNS('http://www.w3.org/2000/svg','path');
+      temp.setAttribute('id','tempEdge');
+      temp.setAttribute('class','flow-edge temp-edge');
+      temp.setAttribute('marker-end','url(#arrowhead-temp)');
+      svg.appendChild(temp);
+    });
+
+    canvas.appendChild(el);
+  });
+  drawEdges();
+}
+
+document.addEventListener('pointermove', e => {
+  if(connectDrag){
+    const rect = canvasEl().getBoundingClientRect();
+    const mx = e.clientX - rect.left + canvasEl().scrollLeft;
+    const my = e.clientY - rect.top + canvasEl().scrollTop;
+    const temp = document.getElementById('tempEdge');
+    if(temp) temp.setAttribute('d', bezierPath(connectDrag.x1, connectDrag.y1, mx, my));
+    return;
+  }
+  if(!dragState) return;
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  const node = canvasNodes.find(n => n.id === dragState.id);
+  if(node){
+    node.x = Math.max(0, dragState.origX + dx);
+    node.y = Math.max(0, dragState.origY + dy);
+    const el = canvasEl().querySelector(`.flow-node[data-id="${node.id}"]`);
+    if(el){ el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+    drawEdges();
+  }
+});
+
+document.addEventListener('pointerup', e => {
+  if(connectDrag){
+    const elAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+    const targetNodeEl = elAtPoint ? elAtPoint.closest('.flow-node') : null;
+    if(targetNodeEl && targetNodeEl.dataset.id !== connectDrag.fromId){
+      addConnection(connectDrag.fromId, targetNodeEl.dataset.id);
+    }
+    const temp = document.getElementById('tempEdge');
+    if(temp) temp.remove();
+    connectDrag = null;
+    drawEdges();
+    return;
+  }
+  dragState = null;
+});
+
+function bezierPath(x1, y1, x2, y2){
+  const dy = Math.max(40, Math.abs(y2 - y1) / 2);
+  return `M ${x1},${y1} C ${x1},${y1+dy} ${x2},${y2-dy} ${x2},${y2}`;
+}
+
+function drawEdges(){
+  const svg = document.getElementById('flowEdges');
+  svg.querySelectorAll('.flow-edge:not(.temp-edge)').forEach(e => e.remove());
+  connections.forEach(c => {
+    const from = canvasNodes.find(n => n.id === c.from);
+    const to = canvasNodes.find(n => n.id === c.to);
+    if(!from || !to) return;
+    const x1 = from.x + NODE_W/2, y1 = from.y + NODE_H;
+    const x2 = to.x + NODE_W/2, y2 = to.y;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('class','flow-edge');
+    path.setAttribute('d', bezierPath(x1, y1, x2, y2));
+    path.setAttribute('marker-end','url(#arrowhead)');
+    svg.appendChild(path);
+  });
+}
+
+/* ══════════════════════════ VALIDATION ENGINE ══════════════════════════ */
+function findByKind(kind){ return canvasNodes.filter(n => n.kind === kind); }
+
+function pathExists(fromKind, toKind){
+  const starts = findByKind(fromKind).map(n => n.id);
+  const targets = new Set(findByKind(toKind).map(n => n.id));
+  if(starts.length === 0 || targets.size === 0) return false;
+  const adj = {};
+  connections.forEach(c => { (adj[c.from] = adj[c.from] || []).push(c.to); });
+  const visited = new Set();
+  const queue = [...starts];
+  while(queue.length){
+    const cur = queue.shift();
+    if(targets.has(cur)) return true;
+    if(visited.has(cur)) continue;
+    visited.add(cur);
+    (adj[cur] || []).forEach(n => queue.push(n));
+  }
+  return false;
+}
+
+function runValidation(){
+  const hasHome = findByKind('home').length > 0;
+  const hasClubDetail = findByKind('clubdetail').length > 0;
+  const hasRegForm = findByKind('regform').length > 0;
+  const hasSuccess = findByKind('success').length > 0;
+  const hasClubList = findByKind('clublist').length > 0;
+  const hasError = findByKind('error').length > 0;
+
+  const homeToDetail = pathExists('home','clubdetail');
+  const detailToReg = pathExists('clubdetail','regform');
+  const regToSuccess = pathExists('regform','success');
+  const listBridged = pathExists('home','clublist') && pathExists('clublist','clubdetail');
+  const errorBranch = pathExists('regform','error') || pathExists('confirmation','error');
+
+  let goal = (hasHome && hasSuccess) ? 20 : ((hasHome || hasSuccess) ? 10 : 0);
+  let flow;
+  const coreChain = [homeToDetail, detailToReg, regToSuccess].filter(Boolean).length;
+  if(coreChain === 3) flow = 25; else if(coreChain === 2) flow = 16; else if(coreChain === 1) flow = 8; else flow = 0;
+  let logic = listBridged ? 20 : (hasClubList ? 10 : 12);
+  let edgecase = errorBranch ? 15 : (hasError ? 6 : 3);
+  const orphanCount = canvasNodes.filter(n => !connections.some(c => c.from===n.id || c.to===n.id)).length;
+  let simplicity = Math.max(4, 10 - orphanCount);
+
+  let tier, message;
+  if(!hasHome || !hasRegForm || !hasSuccess || coreChain < 2){
+    tier = 'needs-work';
+    message = 'Flow-nya belum lengkap. Pastikan minimal ada langkah masuk (Home), form pendaftaran, dan halaman berhasil (Success), lalu sambungkan berurutan.';
+  } else if(coreChain < 3){
+    tier = 'needs-work';
+    message = 'Sudah ada bagian-bagian pentingnya, tapi beberapa langkah belum tersambung. Coba cek lagi urutan dari Home sampai Success.';
+  } else if(!listBridged){
+    tier = 'almost';
+    message = 'Hampir tepat! Kamu melewati langkah dimana user menemukan atau memilih klubnya (Club List) sebelum masuk ke detail.';
+  } else if(!errorBranch){
+    tier = 'good';
+    message = 'Flow inti kamu solid! Coba pikirkan juga apa yang terjadi kalau user gagal atau salah isi data (skenario error).';
+  } else {
+    tier = 'great';
+    message = 'Flow ini matang — jalur utama jelas dan kamu juga mempertimbangkan skenario gagal. Ini persis cara berpikir yang dipakai designer di industri.';
+  }
+
+  const total = goal + flow + logic + edgecase + simplicity;
+  return { goal, flow, logic, edgecase, simplicity, total, tier, message };
+}
+
+function validateFlowManual(){
+  const r = runValidation();
+  alert('Cek cepat:\n\n' + r.message + '\n\nEstimasi sementara: ' + r.total + '/90 (belum termasuk alasan)');
+}
+
+/* ══════════════════════════ SUBMIT & RESULT ══════════════════════════ */
+const TIER_LABELS = {
+  'needs-work': { badge:'🧭', label:'Perlu Dicoba Lagi' },
+  'almost': { badge:'🥉', label:'Path Finder' },
+  'good': { badge:'🥈', label:'Flow Builder' },
+  'great': { badge:'🥇', label:'Flow Master' },
+};
+
+function submitFlow(timeExpired){
+  clearInterval(timerInterval);
+  latestValidation = runValidation();
+  reflectionText = '';
+
+  const elapsed = questStartTime ? Math.round((Date.now() - questStartTime)/1000) : 0;
+  const mm = Math.floor(elapsed/60), ss = elapsed%60;
+
+  const tierInfo = TIER_LABELS[latestValidation.tier];
+  document.getElementById('badgeMedal').textContent = tierInfo.badge;
+  document.getElementById('badgeTier').textContent = tierInfo.label;
+  document.getElementById('resultSubline').textContent = timeExpired
+    ? `Waktu habis — flow terakhir kamu otomatis dikirim (${mm}m ${ss}s).`
+    : `Quest 2 selesai dalam ${mm}m ${ss}s.`;
+  document.getElementById('resultMessage').textContent = latestValidation.message;
+
+  updateScoreMeter(false);
+  renderDetailTable(false);
+  document.getElementById('detailTable').classList.remove('show');
+  document.getElementById('reflectionInput').value = '';
+  document.getElementById('reflectionInput').disabled = false;
+  document.getElementById('reflectionSaved').classList.remove('show');
+
+  goToView('view-result');
+}
+
+function updateScoreMeter(withRationale){
+  const v = latestValidation;
+  const rationaleScore = withRationale ? computeRationaleScore(reflectionText) : 0;
+  const total = v.goal + v.flow + v.logic + v.edgecase + v.simplicity + rationaleScore;
+  const max = withRationale ? 100 : 90;
+  document.getElementById('scoreMeterText').textContent = total + ' / ' + max;
+  document.getElementById('scoreMeterFill').style.width = Math.min(100, (total/100)*100) + '%';
+}
+
+function computeRationaleScore(text){
+  const len = text.trim().length;
+  if(len === 0) return 0;
+  if(len < 20) return 5;
+  if(len < 60) return 8;
+  return 10;
+}
+
+function toggleDetail(){
+  document.getElementById('detailTable').classList.toggle('show');
+}
+
+function renderDetailTable(withRationale){
+  const v = latestValidation;
+  const rationaleScore = withRationale ? computeRationaleScore(reflectionText) : null;
+  const total = v.goal + v.flow + v.logic + v.edgecase + v.simplicity + (rationaleScore || 0);
+  const rows = [
+    ['Goal Understanding', v.goal + ' / 20'],
+    ['Flow Validity', v.flow + ' / 25'],
+    ['Logic', v.logic + ' / 20'],
+    ['Edge Case', v.edgecase + ' / 15'],
+    ['Simplicity', v.simplicity + ' / 10'],
+    ['Rationale', rationaleScore === null ? 'Belum diisi' : rationaleScore + ' / 10'],
+    ['Total', total + ' / 100'],
+  ];
+  const el = document.getElementById('detailTable');
+  el.innerHTML = rows.map((r,i) => `<div class="detail-row ${r[1]==='Belum diisi' ? 'pending' : ''}"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+}
+
+function submitReflection(){
+  reflectionText = document.getElementById('reflectionInput').value;
+  updateScoreMeter(true);
+  renderDetailTable(true);
+  document.getElementById('detailTable').classList.add('show');
+  document.getElementById('reflectionInput').disabled = true;
+  document.getElementById('reflectionSaved').classList.add('show');
+
+  questState.q2 = 'completed';
+
+  const v = latestValidation;
+  const rationaleScore = computeRationaleScore(reflectionText);
+  const total = v.goal + v.flow + v.logic + v.edgecase + v.simplicity + rationaleScore;
+  const elapsed = questStartTime ? Math.round((Date.now() - questStartTime)/1000) : 0;
+  const mm = Math.floor(elapsed/60), ss = String(elapsed%60).padStart(2,'0');
+
+  const flowLabels = canvasNodes.map(n => n.label);
+
+  const existingIdx = adminParticipants.findIndex(p => p.isLive);
+  const liveEntry = {
+    name: participantData.name || 'Peserta Baru',
+    school: participantData.school || 'SMKN 2 Sumedang',
+    progress: '2/4',
+    time: mm + 'm ' + ss + 's',
+    score: total,
+    status: 'Completed',
+    isLive: true,
+    flow: flowLabels.length ? flowLabels : ['(kosong)'],
+    rationale: reflectionText || '(tidak diisi)',
+    breakdown: { goal:v.goal, flow:v.flow, logic:v.logic, edgecase:v.edgecase, simplicity:v.simplicity, rationale:rationaleScore, total },
+  };
+  if(existingIdx >= 0) adminParticipants[existingIdx] = liveEntry;
+  else adminParticipants.unshift(liveEntry);
+}
+
+/* ══════════════════════════ ADMIN VIEWS ══════════════════════════ */
+function renderAdminDashboard(){
+  const completed = adminParticipants.filter(p => p.status === 'Completed');
+  const inProgress = adminParticipants.filter(p => p.status === 'In Progress');
+  const avg = completed.length ? Math.round(completed.reduce((s,p)=>s+p.score,0)/completed.length) : 0;
+
+  document.getElementById('statTotal').textContent = adminParticipants.length;
+  document.getElementById('statCompleted').textContent = completed.length;
+  document.getElementById('statProgress').textContent = inProgress.length;
+  document.getElementById('statAvg').textContent = avg;
+
+  const tbody = document.getElementById('adminTableBody');
+  tbody.innerHTML = '';
+  adminParticipants.forEach((p, idx) => {
+    const tr = document.createElement('tr');
+    const clickable = p.status === 'Completed';
+    tr.className = clickable ? 'clickable' : '';
+    tr.innerHTML = `
+      <td>${p.name}${p.isLive ? '<span class="new-tag">BARU</span>' : ''}</td>
+      <td>${p.progress}</td>
+      <td>${p.time}</td>
+      <td>${p.score !== null ? p.score : '—'}</td>
+      <td><span class="status-pill ${p.status === 'Completed' ? 'completed' : 'progress'}">${p.status === 'Completed' ? 'Selesai' : 'Berjalan'}</span></td>
+    `;
+    if(clickable) tr.onclick = () => openSubmissionViewer(idx);
+    tbody.appendChild(tr);
+  });
+}
+
+function openSubmissionViewer(idx){
+  const p = adminParticipants[idx];
+  document.getElementById('subEyebrow').textContent = 'Submission Detail · Quest 2';
+  document.getElementById('subName').textContent = p.name;
+  document.getElementById('subRationale').textContent = '“' + p.rationale + '”';
+
+  const chain = document.getElementById('subFlowChain');
+  chain.innerHTML = p.flow.map((label, i) =>
+    `<div class="ro-chip">${label}</div>` + (i < p.flow.length-1 ? '<span class="ro-arrow">→</span>' : '')
+  ).join('');
+
+  const b = p.breakdown;
+  const rows = [
+    ['Goal Understanding', b.goal + ' / 20'],
+    ['Flow Validity', b.flow + ' / 25'],
+    ['Logic', b.logic + ' / 20'],
+    ['Edge Case', b.edgecase + ' / 15'],
+    ['Simplicity', b.simplicity + ' / 10'],
+    ['Rationale', b.rationale + ' / 10'],
+    ['Total', b.total + ' / 100'],
+  ];
+  document.getElementById('subScoreDetail').innerHTML = rows.map(r =>
+    `<div class="detail-row"><span>${r[0]}</span><span>${r[1]}</span></div>`
+  ).join('');
+
+  goToView('view-admin-submission');
+}
+</script>
+</body>
+</html>

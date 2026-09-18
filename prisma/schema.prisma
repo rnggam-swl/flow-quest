@@ -1,0 +1,486 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ActivityLog {
+  id        String            @id @db.Uuid
+  userId    String?           @db.Uuid
+  teamId    String?           @db.Uuid
+  sessionId String?           @db.Uuid
+  metadata  Json?
+  createdAt DateTime          @default(now())
+  event     ActivityEventType
+  Session   Session?          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  Team      Team?             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  User      User?             @relation(fields: [userId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model AuthSession {
+  id         String   @id @db.Uuid
+  userId     String   @db.Uuid
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  sessionId  String?  @db.Uuid
+  Session    Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  User       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model ChatMessage {
+  id        String   @id @db.Uuid
+  teamId    String   @db.Uuid
+  questId   String?  @db.Uuid
+  userId    String   @db.Uuid
+  text      String
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  Quest     Quest?   @relation(fields: [questId], references: [id])
+  Team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  User      User     @relation(fields: [userId], references: [id])
+
+  @@index([teamId, createdAt])
+}
+
+model Constraint {
+  id          String            @id @db.Uuid
+  questId     String            @db.Uuid
+  title       String
+  description String
+  triggerType ConstraintTrigger @default(MANUAL)
+  cost        Int               @default(0)
+  Quest       Quest             @relation(fields: [questId], references: [id], onDelete: Cascade)
+}
+
+model Event {
+  id          String @id @db.Uuid
+  questId     String @db.Uuid
+  title       String
+  description String
+  eventType   String
+  Quest       Quest  @relation(fields: [questId], references: [id], onDelete: Cascade)
+}
+
+model Feedback {
+  id                   String         @id @db.Uuid
+  submissionId         String         @db.Uuid
+  authorId             String         @db.Uuid
+  feedback             String
+  visibleToParticipant Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  User                 User           @relation(fields: [authorId], references: [id])
+  FlowSubmission       FlowSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model FlowConnection {
+  id                                             String         @id @db.Uuid
+  submissionId                                   String         @db.Uuid
+  sourceNodeId                                   String         @db.Uuid
+  targetNodeId                                   String         @db.Uuid
+  connectionType                                 ConnectionType @default(DEFAULT)
+  createdBy                                      String         @db.Uuid
+  createdAt                                      DateTime       @default(now())
+  User                                           User           @relation(fields: [createdBy], references: [id])
+  FlowNode_FlowConnection_sourceNodeIdToFlowNode FlowNode       @relation("FlowConnection_sourceNodeIdToFlowNode", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  FlowSubmission                                 FlowSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  FlowNode_FlowConnection_targetNodeIdToFlowNode FlowNode       @relation("FlowConnection_targetNodeIdToFlowNode", fields: [targetNodeId], references: [id], onDelete: Cascade)
+}
+
+model FlowNode {
+  id                                                   String           @id @db.Uuid
+  submissionId                                         String           @db.Uuid
+  nodeType                                             NodeType
+  label                                                String
+  positionX                                            Float
+  positionY                                            Float
+  createdBy                                            String           @db.Uuid
+  createdAt                                            DateTime         @default(now())
+  FlowConnection_FlowConnection_sourceNodeIdToFlowNode FlowConnection[] @relation("FlowConnection_sourceNodeIdToFlowNode")
+  FlowConnection_FlowConnection_targetNodeIdToFlowNode FlowConnection[] @relation("FlowConnection_targetNodeIdToFlowNode")
+  User                                                 User             @relation(fields: [createdBy], references: [id])
+  FlowSubmission                                       FlowSubmission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model FlowSubmission {
+  id               String           @id @db.Uuid
+  teamId           String           @db.Uuid
+  questId          String           @db.Uuid
+  status           SubmissionStatus @default(DRAFT)
+  startedAt        DateTime         @default(now())
+  submittedAt      DateTime?
+  version          Int              @default(1)
+  timeSpentSeconds Int?
+  Feedback         Feedback[]
+  FlowConnection   FlowConnection[]
+  FlowNode         FlowNode[]
+  Quest            Quest            @relation(fields: [questId], references: [id])
+  Team             Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  Score            Score?
+
+  @@unique([teamId, questId])
+}
+
+model InformationCard {
+  id               String             @id @db.Uuid
+  questId          String             @db.Uuid
+  roleId           String?            @db.Uuid
+  userId           String?            @db.Uuid
+  title            String
+  content          String
+  type             CardType           @default(EVIDENCE)
+  visibility       Visibility         @default(TEAM)
+  shareable        Boolean            @default(true)
+  cost             Int                @default(0)
+  Quest            Quest              @relation(fields: [questId], references: [id], onDelete: Cascade)
+  Role             Role?              @relation(fields: [roleId], references: [id])
+  User             User?              @relation(fields: [userId], references: [id])
+  InformationShare InformationShare[]
+
+  @@index([questId])
+}
+
+model InformationShare {
+  id              String          @id @db.Uuid
+  informationId   String          @db.Uuid
+  sharedBy        String          @db.Uuid
+  teamId          String          @db.Uuid
+  sharedAt        DateTime        @default(now())
+  InformationCard InformationCard @relation(fields: [informationId], references: [id], onDelete: Cascade)
+  User            User            @relation(fields: [sharedBy], references: [id])
+  Team            Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([informationId, teamId])
+}
+
+model Quest {
+  id               String            @id @db.Uuid
+  scenarioId       String            @db.Uuid
+  order            Int
+  title            String
+  objective        String
+  xp               Int               @default(0)
+  published        Boolean           @default(false)
+  timeLimitMinutes Int?
+  ChatMessage      ChatMessage[]
+  Constraint       Constraint[]
+  Event            Event[]
+  FlowSubmission   FlowSubmission[]
+  InformationCard  InformationCard[]
+  Scenario         Scenario          @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  SessionQuest     SessionQuest[]
+  TeamDecision     TeamDecision[]
+
+  @@unique([scenarioId, order])
+}
+
+model Reflection {
+  id        String           @id @db.Uuid
+  userId    String           @db.Uuid
+  teamId    String           @db.Uuid
+  sessionId String           @db.Uuid
+  question  String
+  answer    String
+  createdAt DateTime         @default(now())
+  source    ReflectionSource @default(INDIVIDUAL)
+  Session   Session          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  Team      Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  User      User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, sessionId])
+}
+
+model ResourceTransaction {
+  id            String   @id @db.Uuid
+  teamId        String   @db.Uuid
+  amount        Int
+  reason        String
+  createdAt     DateTime @default(now())
+  metadata      Json?
+  participantId String?  @db.Uuid
+  User          User?    @relation(fields: [participantId], references: [id])
+  Team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt])
+}
+
+model Role {
+  id              String            @id @db.Uuid
+  code            RoleCode          @unique
+  label           String
+  description     String?
+  InformationCard InformationCard[]
+  TeamMember      TeamMember[]
+}
+
+model Scenario {
+  id              String  @id @db.Uuid
+  title           String
+  description     String
+  userDescription String?
+  userGoal        String?
+  Quest           Quest[]
+}
+
+model Score {
+  id              String         @id @db.Uuid
+  submissionId    String         @unique @db.Uuid
+  goalScore       Float          @default(0)
+  flowScore       Float          @default(0)
+  logicScore      Float          @default(0)
+  constraintScore Float          @default(0)
+  edgeCaseScore   Float          @default(0)
+  simplicityScore Float          @default(0)
+  rationaleScore  Float          @default(0)
+  totalScore      Float          @default(0)
+  reviewedBy      String?        @db.Uuid
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime
+  User            User?          @relation(fields: [reviewedBy], references: [id])
+  FlowSubmission  FlowSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id                 String               @id @db.Uuid
+  title              String
+  description        String?
+  sessionCode        String               @unique
+  status             SessionStatus        @default(DRAFT)
+  startAt            DateTime?
+  endAt              DateTime?
+  timeLimitMinutes   Int?
+  createdBy          String               @db.Uuid
+  createdAt          DateTime             @default(now())
+  ActivityLog        ActivityLog[]
+  AuthSession        AuthSession[]
+  Reflection         Reflection[]
+  SessionParticipant SessionParticipant[]
+  SessionQuest       SessionQuest[]
+  Team               Team[]
+}
+
+model SessionParticipant {
+  id            String            @id @db.Uuid
+  sessionId     String            @db.Uuid
+  participantId String            @db.Uuid
+  startedAt     DateTime?
+  deadlineAt    DateTime?
+  completedAt   DateTime?
+  totalXp       Int               @default(0)
+  createdAt     DateTime          @default(now())
+  status        ParticipantStatus @default(REGISTERED)
+  User          User              @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  Session       Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, participantId])
+  @@index([sessionId, status])
+}
+
+model SessionQuest {
+  id        String  @id @db.Uuid
+  sessionId String  @db.Uuid
+  questId   String  @db.Uuid
+  order     Int
+  Quest     Quest   @relation(fields: [questId], references: [id])
+  Session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, order])
+  @@unique([sessionId, questId])
+  @@index([sessionId, order])
+}
+
+model Team {
+  id                  String                @id @db.Uuid
+  sessionId           String                @db.Uuid
+  name                String
+  resourcePoints      Int                   @default(0)
+  createdAt           DateTime              @default(now())
+  ActivityLog         ActivityLog[]
+  ChatMessage         ChatMessage[]
+  FlowSubmission      FlowSubmission[]
+  InformationShare    InformationShare[]
+  Reflection          Reflection[]
+  ResourceTransaction ResourceTransaction[]
+  Session             Session               @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  TeamDecision        TeamDecision[]
+  TeamMember          TeamMember[]
+
+  @@index([sessionId])
+}
+
+model TeamDecision {
+  id             String    @id @db.Uuid
+  teamId         String    @db.Uuid
+  questId        String    @db.Uuid
+  question       String
+  options        Json
+  selectedOption String?
+  decidedAt      DateTime?
+  Quest          Quest     @relation(fields: [questId], references: [id])
+  Team           Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  Vote           Vote[]
+}
+
+model TeamMember {
+  id       String   @id @db.Uuid
+  teamId   String   @db.Uuid
+  userId   String   @db.Uuid
+  roleId   String   @db.Uuid
+  joinedAt DateTime @default(now())
+  Role     Role     @relation(fields: [roleId], references: [id])
+  Team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  User     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model User {
+  id                  String                @id @db.Uuid
+  email               String                @unique
+  displayName         String
+  passwordHash        String?
+  appRole             AppRole               @default(PARTICIPANT)
+  avatarUrl           String?
+  school              String?
+  groupName           String?
+  createdAt           DateTime              @default(now())
+  ActivityLog         ActivityLog[]
+  AuthSession         AuthSession[]
+  ChatMessage         ChatMessage[]
+  Feedback            Feedback[]
+  FlowConnection      FlowConnection[]
+  FlowNode            FlowNode[]
+  InformationCard     InformationCard[]
+  InformationShare    InformationShare[]
+  Reflection          Reflection[]
+  ResourceTransaction ResourceTransaction[]
+  Score               Score[]
+  SessionParticipant  SessionParticipant[]
+  TeamMember          TeamMember[]
+  Vote                Vote[]
+}
+
+model Vote {
+  id             String       @id @db.Uuid
+  decisionId     String       @db.Uuid
+  userId         String       @db.Uuid
+  selectedOption String
+  createdAt      DateTime     @default(now())
+  TeamDecision   TeamDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  User           User         @relation(fields: [userId], references: [id])
+
+  @@unique([decisionId, userId])
+}
+
+enum ActivityEventType {
+  SESSION_JOINED
+  QUEST_STARTED
+  QUEST_COMPLETED
+  INFORMATION_VIEWED
+  INFORMATION_SHARED
+  CARD_SHARED
+  NODE_CREATED
+  NODE_UPDATED
+  NODE_DELETED
+  NODE_CONNECTED
+  NODE_DISCONNECTED
+  FLOW_VALIDATED
+  VALIDATION_FAILED
+  DECISION_CREATED
+  VOTE_CAST
+  CONSTRAINT_REVEALED
+  EVENT_TRIGGERED
+  RESOURCE_SPENT
+  FLOW_SUBMITTED
+  REFLECTION_SUBMITTED
+  TEAM_MESSAGE
+}
+
+enum AppRole {
+  ADMIN
+  PARTICIPANT
+}
+
+enum CardType {
+  EVIDENCE
+  HINT
+  REQUIREMENT
+}
+
+enum ConnectionType {
+  DEFAULT
+  YES
+  NO
+  RECOVERY
+}
+
+enum ConstraintTrigger {
+  TIME
+  MANUAL
+  QUEST_COMPLETE
+  RANDOM
+}
+
+enum NodeType {
+  START
+  ACTION
+  SCREEN
+  SYSTEM
+  DECISION
+  OUTCOME
+  ERROR
+}
+
+enum ParticipantStatus {
+  REGISTERED
+  IN_PROGRESS
+  COMPLETED
+  TIME_EXPIRED
+  ABANDONED
+}
+
+enum ReflectionSource {
+  TEAM
+  INDIVIDUAL
+}
+
+enum RoleCode {
+  EXPLORER
+  STRATEGIST
+  ARCHITECT
+  COORDINATOR
+}
+
+enum SessionStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  TIME_EXPIRED
+  REVIEWED
+}
+
+enum Visibility {
+  TEAM
+  ROLE
+  USER
+}
