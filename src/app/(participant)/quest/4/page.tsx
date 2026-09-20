@@ -6,7 +6,7 @@ const RUBRIC = getRubricMax(4);
 const BASE_MAX = RUBRIC.goal + RUBRIC.flow + RUBRIC.logic + RUBRIC.constraint + RUBRIC.edgeCase + RUBRIC.simplicity;
 
 export default async function Quest4Page() {
-  const { submissionId, nodes, connections, remaining } = await loadFlowQuestPageData(4, "/result/4");
+  const { submissionId, nodes, connections, remaining, viewMode } = await loadFlowQuestPageData(4, "/result/4");
 
   return (
     <FlowBuilderCanvas
@@ -17,6 +17,7 @@ export default async function Quest4Page() {
       nodeLibrary={QUEST4_NODE_LIBRARY}
       resultHref="/result/4"
       baseMax={BASE_MAX}
+      initialViewMode={viewMode}
       initialNodes={nodes.map((n) => ({
         id: n.id,
         label: n.label,

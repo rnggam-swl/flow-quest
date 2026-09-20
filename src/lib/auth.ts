@@ -63,7 +63,7 @@ export async function destroyCurrentSession() {
 
 export type CurrentUser = Pick<
   User,
-  "id" | "email" | "displayName" | "appRole" | "avatarUrl" | "school" | "groupName"
+  "id" | "email" | "displayName" | "appRole" | "avatarUrl" | "school" | "groupName" | "flowViewMode"
 >;
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -98,6 +98,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     avatarUrl: user.avatarUrl,
     school: user.school,
     groupName: user.groupName,
+    flowViewMode: user.flowViewMode,
   };
 }
 

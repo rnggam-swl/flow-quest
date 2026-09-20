@@ -356,6 +356,7 @@ model User {
   avatarUrl           String?
   school              String?
   groupName           String?
+  flowViewMode        FlowViewMode          @default(VERTICAL)
   createdAt           DateTime              @default(now())
   ActivityLog         ActivityLog[]
   AuthSession         AuthSession[]
@@ -432,6 +433,11 @@ enum ConstraintTrigger {
   MANUAL
   QUEST_COMPLETE
   RANDOM
+}
+
+enum FlowViewMode {
+  VERTICAL
+  HORIZONTAL
 }
 
 enum NodeType {

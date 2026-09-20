@@ -6,7 +6,7 @@ const RUBRIC = getRubricMax(3);
 const BASE_MAX = RUBRIC.goal + RUBRIC.flow + RUBRIC.logic + RUBRIC.constraint + RUBRIC.edgeCase + RUBRIC.simplicity;
 
 export default async function Quest3Page() {
-  const { submissionId, nodes, connections, remaining } = await loadFlowQuestPageData(3, "/result/3");
+  const { submissionId, nodes, connections, remaining, viewMode } = await loadFlowQuestPageData(3, "/result/3");
 
   return (
     <FlowBuilderCanvas
@@ -17,6 +17,7 @@ export default async function Quest3Page() {
       nodeLibrary={QUEST3_NODE_LIBRARY}
       resultHref="/result/3"
       baseMax={BASE_MAX}
+      initialViewMode={viewMode}
       initialNodes={nodes.map((n) => ({
         id: n.id,
         label: n.label,

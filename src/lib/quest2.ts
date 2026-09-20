@@ -22,14 +22,17 @@ function validatorFor(order: number) {
   return runFlowValidation; // Quest 2 and Quest 5 share the same rubric engine.
 }
 
+/**
+ * Uses an atomic upsert (not a find-then-create) because React's dev-mode
+ * double-invoke and concurrent navigations/prefetches can both hit this for
+ * the same team+quest at once — a plain check-then-create races and trips
+ * the FlowSubmission_teamId_questId_key unique constraint.
+ */
 export async function getOrStartSubmission(teamId: string, questId: string) {
-  const existing = await prisma.flowSubmission.findUnique({
+  return prisma.flowSubmission.upsert({
     where: { teamId_questId: { teamId, questId } },
-  });
-  if (existing) return existing;
-
-  return prisma.flowSubmission.create({
-    data: {
+    update: {},
+    create: {
       id: crypto.randomUUID(),
       teamId,
       questId,
@@ -189,5 +192,5 @@ export async function loadFlowQuestPageData(order: number, resultHref: string) {
     prisma.flowConnection.findMany({ where: { submissionId: submission.id } }),
   ]);
 
-  return { submissionId: submission.id, nodes, connections, remaining };
+  return { submissionId: submission.id, nodes, connections, remaining, viewMode: user.flowViewMode };
 }

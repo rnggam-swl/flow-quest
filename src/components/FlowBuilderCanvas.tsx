@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { getValidatorForOrder, type ConnectionKind, type NodeLibItem } from "@/lib/flowScoring";
+import {
+  autoLayout,
+  nearestSide,
+  previewPath,
+  routeConnection,
+  sidePoint,
+  OPPOSITE_SIDE,
+  type RouteObstacle,
+  type Side,
+} from "@/lib/flowLayout";
 
 interface FlowNodeVM {
   id: string;
@@ -20,10 +30,17 @@ interface FlowConnectionVM {
   sourceNodeId: string;
   targetNodeId: string;
   connectionType: ConnectionKind;
+  /** Sides the user actually dragged from/to (horizontal mode only) — kept so the render doesn't silently re-pick a different side than what was manually chosen. Undefined for connections loaded fresh from the DB, which fall back to an auto-picked nearest side. */
+  sideFrom?: Side;
+  sideTo?: Side;
 }
 
 const NODE_W = 168;
 const NODE_H = 58;
+const OBSTACLE_PADDING = 6;
+
+type FlowViewMode = "VERTICAL" | "HORIZONTAL";
+const SIDES: Side[] = ["top", "right", "bottom", "left"];
 
 const EDGE_COLOR: Record<ConnectionKind, string> = {
   DEFAULT: "var(--teal)",
@@ -31,11 +48,6 @@ const EDGE_COLOR: Record<ConnectionKind, string> = {
   NO: "var(--danger)",
   RECOVERY: "var(--gold)",
 };
-
-function bezierPath(x1: number, y1: number, x2: number, y2: number) {
-  const dy = Math.max(40, Math.abs(y2 - y1) / 2);
-  return `M ${x1},${y1} C ${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
-}
 
 /** A node's single (or, for Decision nodes, dual) outgoing edge type is implied by its own type. */
 function impliedConnectionType(node: Pick<FlowNodeVM, "decision" | "nodeType">, handle?: "yes" | "no"): ConnectionKind {
@@ -55,6 +67,7 @@ export function FlowBuilderCanvas({
   initialNodes,
   initialConnections,
   initialRemainingSeconds,
+  initialViewMode,
 }: {
   submissionId: string;
   questOrder: number;
@@ -66,6 +79,7 @@ export function FlowBuilderCanvas({
   initialNodes: { id: string; label: string; nodeType: string; positionX: number; positionY: number }[];
   initialConnections: { id: string; sourceNodeId: string; targetNodeId: string; connectionType: string }[];
   initialRemainingSeconds: number;
+  initialViewMode: FlowViewMode;
 }) {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -96,12 +110,29 @@ export function FlowBuilderCanvas({
   );
   const [secondsLeft, setSecondsLeft] = useState(initialRemainingSeconds);
   const [locked, setLocked] = useState(initialRemainingSeconds <= 0);
-  const [dragState, setDragState] = useState<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [connectDrag, setConnectDrag] = useState<{ fromId: string; connType: ConnectionKind; x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [dragState, setDragState] = useState<{ startX: number; startY: number; origins: Record<string, { x: number; y: number }> } | null>(null);
+  const [connectDrag, setConnectDrag] = useState<{
+    fromId: string;
+    connType: ConnectionKind;
+    fromSide: Side;
+    toSide: Side;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  } | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<{ def: NodeLibItem; x: number; y: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [checkMsg, setCheckMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [viewMode, setViewMode] = useState<FlowViewMode>(initialViewMode);
+  const [savingView, setSavingView] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
+  const isHorizontal = viewMode === "HORIZONTAL";
+  const isBusy = Boolean(dragState || connectDrag || paletteDrag || marquee);
   const submittingRef = useRef(false);
 
   function flashError(message: string) {
@@ -165,6 +196,13 @@ export function FlowBuilderCanvas({
 
   useEffect(() => {
     function handleMove(e: PointerEvent) {
+      if (marquee) {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const x = e.clientX - rect.left + canvasRef.current!.scrollLeft;
+        const y = e.clientY - rect.top + canvasRef.current!.scrollTop;
+        setMarquee((m) => (m ? { ...m, x2: x, y2: y } : m));
+        return;
+      }
       if (paletteDrag) {
         setPaletteDrag((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p));
         return;
@@ -173,18 +211,55 @@ export function FlowBuilderCanvas({
         const rect = canvasRef.current!.getBoundingClientRect();
         const mx = e.clientX - rect.left + canvasRef.current!.scrollLeft;
         const my = e.clientY - rect.top + canvasRef.current!.scrollTop;
+        if (isHorizontal) {
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          const targetEl = el?.closest<HTMLElement>("[data-node-id]");
+          const targetId = targetEl?.dataset.nodeId;
+          const targetNode = targetId && targetId !== connectDrag.fromId ? nodesRef.current.find((n) => n.id === targetId) : null;
+          if (targetNode) {
+            const box = { x: targetNode.x, y: targetNode.y, w: NODE_W, h: NODE_H };
+            const side = nearestSide(mx, my, box);
+            const p = sidePoint(box, side);
+            setSnapTargetId(targetNode.id);
+            setConnectDrag((c) => (c ? { ...c, toSide: side, x2: p.x, y2: p.y } : c));
+            return;
+          }
+          setSnapTargetId(null);
+          setConnectDrag((c) => (c ? { ...c, toSide: OPPOSITE_SIDE[c.fromSide], x2: mx, y2: my } : c));
+          return;
+        }
         setConnectDrag((c) => (c ? { ...c, x2: mx, y2: my } : c));
         return;
       }
       if (!dragState) return;
       const dx = e.clientX - dragState.startX;
       const dy = e.clientY - dragState.startY;
-      const nx = Math.max(0, dragState.origX + dx);
-      const ny = Math.max(0, dragState.origY + dy);
-      setNodes((ns) => ns.map((n) => (n.id === dragState.id ? { ...n, x: nx, y: ny } : n)));
+      setNodes((ns) =>
+        ns.map((n) => {
+          const origin = dragState.origins[n.id];
+          if (!origin) return n;
+          return { ...n, x: Math.max(0, origin.x + dx), y: Math.max(0, origin.y + dy) };
+        })
+      );
     }
 
     function handleUp(e: PointerEvent) {
+      if (marquee) {
+        const rx1 = Math.min(marquee.x1, marquee.x2);
+        const rx2 = Math.max(marquee.x1, marquee.x2);
+        const ry1 = Math.min(marquee.y1, marquee.y2);
+        const ry2 = Math.max(marquee.y1, marquee.y2);
+        const hits = nodesRef.current
+          .filter((n) => n.x < rx2 && n.x + NODE_W > rx1 && n.y < ry2 && n.y + NODE_H > ry1)
+          .map((n) => n.id);
+        setSelectedIds((prev) => {
+          const next = e.shiftKey ? new Set(prev) : new Set<string>();
+          hits.forEach((id) => next.add(id));
+          return next;
+        });
+        setMarquee(null);
+        return;
+      }
       if (paletteDrag) {
         const el = document.elementFromPoint(e.clientX, e.clientY);
         if (el?.closest("[data-role=canvas]") && canvasRef.current) {
@@ -201,14 +276,21 @@ export function FlowBuilderCanvas({
         const targetEl = el?.closest<HTMLElement>("[data-node-id]");
         const targetId = targetEl?.dataset.nodeId;
         if (targetId && targetId !== connectDrag.fromId) {
-          void createConnection(connectDrag.fromId, targetId, connectDrag.connType);
+          void createConnection(
+            connectDrag.fromId,
+            targetId,
+            connectDrag.connType,
+            isHorizontal ? { sideFrom: connectDrag.fromSide, sideTo: connectDrag.toSide } : undefined
+          );
         }
         setConnectDrag(null);
+        setSnapTargetId(null);
         return;
       }
       if (dragState) {
-        const node = nodesRef.current.find((n) => n.id === dragState.id);
-        if (node) void persistMove(node.id, node.x, node.y);
+        const ids = Object.keys(dragState.origins);
+        const toPersist = nodesRef.current.filter((n) => ids.includes(n.id));
+        void Promise.all(toPersist.map((n) => persistMove(n.id, n.x, n.y)));
         setDragState(null);
       }
     }
@@ -220,7 +302,7 @@ export function FlowBuilderCanvas({
       window.removeEventListener("pointerup", handleUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragState, connectDrag, paletteDrag]);
+  }, [dragState, connectDrag, paletteDrag, marquee, isHorizontal]);
 
   async function persistMove(nodeId: string, x: number, y: number) {
     try {
@@ -235,7 +317,12 @@ export function FlowBuilderCanvas({
     }
   }
 
-  async function createConnection(sourceNodeId: string, targetNodeId: string, connectionType: ConnectionKind) {
+  async function createConnection(
+    sourceNodeId: string,
+    targetNodeId: string,
+    connectionType: ConnectionKind,
+    sides?: { sideFrom: Side; sideTo: Side }
+  ) {
     if (connectionsRef.current.some((c) => c.sourceNodeId === sourceNodeId && c.targetNodeId === targetNodeId && c.connectionType === connectionType))
       return;
     try {
@@ -249,7 +336,10 @@ export function FlowBuilderCanvas({
         return;
       }
       const { connection } = await res.json();
-      setConnections((cs) => [...cs, { id: connection.id, sourceNodeId, targetNodeId, connectionType }]);
+      setConnections((cs) => [
+        ...cs,
+        { id: connection.id, sourceNodeId, targetNodeId, connectionType, sideFrom: sides?.sideFrom, sideTo: sides?.sideTo },
+      ]);
     } catch {
       flashError("Gagal menyambungkan node — periksa koneksi internet kamu.");
     }
@@ -293,6 +383,7 @@ export function FlowBuilderCanvas({
       }
       setNodes([]);
       setConnections([]);
+      setSelectedIds(new Set());
     } catch {
       flashError("Gagal mereset flow — periksa koneksi internet kamu.");
     } finally {
@@ -310,6 +401,12 @@ export function FlowBuilderCanvas({
       }
       setNodes((ns) => ns.filter((n) => n.id !== id));
       setConnections((cs) => cs.filter((c) => c.sourceNodeId !== id && c.targetNodeId !== id));
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch {
       flashError("Gagal menghapus node — periksa koneksi internet kamu.");
     }
@@ -323,16 +420,128 @@ export function FlowBuilderCanvas({
     setCheckMsg(`${result.message}\n\nEstimasi sementara: ${result.totalScore}/${baseMax} (belum termasuk alasan)`);
   }
 
-  function startConnectDrag(node: FlowNodeVM, e: React.PointerEvent, handle?: "yes" | "no") {
+  /** Resolves the exact exit/entry port + side for a connection: decision nodes are structurally fixed, manually-dragged horizontal connections keep the side the user chose, everything else falls back to the nearest-side heuristic. */
+  function resolveConnectionPorts(c: FlowConnectionVM, from: FlowNodeVM, to: FlowNodeVM) {
+    const fromBox = { x: from.x, y: from.y, w: NODE_W, h: NODE_H };
+    const toBox = { x: to.x, y: to.y, w: NODE_W, h: NODE_H };
+    const fromCenter = { x: from.x + NODE_W / 2, y: from.y + NODE_H / 2 };
+    const toCenter = { x: to.x + NODE_W / 2, y: to.y + NODE_H / 2 };
+
+    let fromSide: Side;
+    let fromPort: { x: number; y: number };
+    if (from.decision) {
+      fromSide = isHorizontal ? "right" : "bottom";
+      fromPort = isHorizontal
+        ? { x: from.x + NODE_W, y: from.y + NODE_H * (c.connectionType === "NO" ? 0.75 : 0.25) }
+        : { x: from.x + NODE_W * (c.connectionType === "NO" ? 0.65 : 0.35), y: from.y + NODE_H };
+    } else if (isHorizontal && c.sideFrom) {
+      fromSide = c.sideFrom;
+      fromPort = sidePoint(fromBox, fromSide);
+    } else if (isHorizontal) {
+      fromSide = nearestSide(toCenter.x, toCenter.y, fromBox);
+      fromPort = sidePoint(fromBox, fromSide);
+    } else {
+      fromSide = "bottom";
+      fromPort = { x: from.x + NODE_W / 2, y: from.y + NODE_H };
+    }
+
+    const toSide: Side = isHorizontal && c.sideTo ? c.sideTo : nearestSide(fromCenter.x, fromCenter.y, toBox);
+    const toPort = sidePoint(toBox, toSide);
+
+    return { fromPort, fromSide, toPort, toSide };
+  }
+
+  function startConnectDrag(node: FlowNodeVM, e: React.PointerEvent, opts?: { handle?: "yes" | "no"; side?: Side }) {
     if (locked) return;
     e.stopPropagation();
     const rect = canvasRef.current!.getBoundingClientRect();
-    const x1 = node.decision ? node.x + NODE_W * (handle === "no" ? 0.65 : 0.35) : node.x + NODE_W / 2;
-    const y1 = node.y + NODE_H;
+
+    let x1: number, y1: number, fromSide: Side;
+    if (isHorizontal) {
+      if (node.decision) {
+        fromSide = "right";
+        x1 = node.x + NODE_W;
+        y1 = node.y + NODE_H * (opts?.handle === "no" ? 0.75 : 0.25);
+      } else {
+        fromSide = opts?.side ?? "right";
+        const p = sidePoint({ x: node.x, y: node.y, w: NODE_W, h: NODE_H }, fromSide);
+        x1 = p.x;
+        y1 = p.y;
+      }
+    } else {
+      fromSide = "bottom";
+      x1 = node.decision ? node.x + NODE_W * (opts?.handle === "no" ? 0.65 : 0.35) : node.x + NODE_W / 2;
+      y1 = node.y + NODE_H;
+    }
+
     const mx = e.clientX - rect.left + canvasRef.current!.scrollLeft;
     const my = e.clientY - rect.top + canvasRef.current!.scrollTop;
-    setConnectDrag({ fromId: node.id, connType: impliedConnectionType(node, handle), x1, y1, x2: mx, y2: my });
+    setConnectDrag({
+      fromId: node.id,
+      connType: impliedConnectionType(node, opts?.handle),
+      fromSide,
+      toSide: OPPOSITE_SIDE[fromSide],
+      x1,
+      y1,
+      x2: mx,
+      y2: my,
+    });
   }
+
+  async function setView(next: FlowViewMode) {
+    if (next === viewMode || savingView || locked) return;
+    setSavingView(true);
+    setViewMode(next);
+    setSelectedIds(new Set());
+    const positions = autoLayout(
+      nodesRef.current.map((n) => ({ id: n.id })),
+      connectionsRef.current,
+      next === "HORIZONTAL" ? "horizontal" : "vertical",
+      { w: NODE_W, h: NODE_H }
+    );
+    setNodes((ns) => ns.map((n) => (positions[n.id] ? { ...n, ...positions[n.id] } : n)));
+    try {
+      await fetch("/api/participant/view-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewMode: next }),
+      });
+    } catch {
+      // Best-effort — preference just won't persist to the next session.
+    }
+    await Promise.all(Object.entries(positions).map(([id, pos]) => persistMove(id, pos.x, pos.y)));
+    setSavingView(false);
+  }
+
+  const canvasSize = isHorizontal ? { w: 1900, h: 900 } : { w: 920, h: 1700 };
+
+  /**
+   * Obstacle-avoiding routes for every connection, recomputed only while the
+   * canvas is idle (nothing being dragged) — the A* search is cheap for one
+   * edge but adds up across many, so during active interaction we render
+   * with the fast `previewPath` fallback instead and only pay for the
+   * "nice" avoiding path once things settle.
+   */
+  const routedPaths = useMemo(() => {
+    if (isBusy) return null;
+    const obstacles: RouteObstacle[] = nodes.map((n) => ({
+      id: n.id,
+      x: n.x - OBSTACLE_PADDING,
+      y: n.y - OBSTACLE_PADDING,
+      w: NODE_W + OBSTACLE_PADDING * 2,
+      h: NODE_H + OBSTACLE_PADDING * 2,
+    }));
+    const map = new Map<string, string>();
+    for (const c of connections) {
+      const from = nodes.find((n) => n.id === c.sourceNodeId);
+      const to = nodes.find((n) => n.id === c.targetNodeId);
+      if (!from || !to) continue;
+      const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
+      map.set(c.id, routeConnection(fromPort, fromSide, toPort, toSide, obstacles, [from.id, to.id], canvasSize));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBusy, nodes, connections, isHorizontal]);
 
   const minutes = Math.floor(secondsLeft / 60);
   const secs = secondsLeft % 60;
@@ -350,6 +559,28 @@ export function FlowBuilderCanvas({
           <b className="text-text">{questLabel}</b> — {scenarioLine}
         </div>
         <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-1 rounded-[20px] border border-border-light bg-surface2 p-1" title="Preferensi tampilan flow">
+            <button
+              type="button"
+              className={`rounded-[16px] px-3 py-1 text-[12px] font-semibold transition-colors ${
+                !isHorizontal ? "bg-teal text-ink" : "text-muted2 hover:text-text"
+              }`}
+              onClick={() => setView("VERTICAL")}
+              disabled={savingView || locked}
+            >
+              ↓ Vertical
+            </button>
+            <button
+              type="button"
+              className={`rounded-[16px] px-3 py-1 text-[12px] font-semibold transition-colors ${
+                isHorizontal ? "bg-teal text-ink" : "text-muted2 hover:text-text"
+              }`}
+              onClick={() => setView("HORIZONTAL")}
+              disabled={savingView || locked}
+            >
+              → Horizontal
+            </button>
+          </div>
           <div className="flex items-center gap-2 rounded-[20px] border border-border-light bg-surface2 px-3.5 py-1.5">
             <span className="text-[11px] uppercase tracking-[0.5px] text-muted2">Sisa Waktu</span>
             <span className={`font-mono text-[16px] font-bold tabular-nums ${timeLow ? "text-danger" : "text-gold"}`}>
@@ -418,9 +649,15 @@ export function FlowBuilderCanvas({
           <p className="text-[12px] leading-[1.6] text-muted2">
             1. Seret node dari sini ke kanvas
             <br />
-            2. Tarik garis dari titik di bawah node ke node tujuan
+            {isHorizontal ? (
+              <>2. Hover node lalu tarik garis dari titik di sisi atas/bawah/kiri/kanan ke node tujuan</>
+            ) : (
+              <>2. Tarik garis dari titik di bawah node ke node tujuan</>
+            )}
             <br />
             3. Node Decision punya 2 titik keluaran: Ya (hijau) &amp; Tidak (merah)
+            <br />
+            4. Seret area kosong untuk pilih beberapa node sekaligus (tahan Shift untuk menambah), lalu geser bersamaan
           </p>
         </div>
 
@@ -429,12 +666,27 @@ export function FlowBuilderCanvas({
             ref={canvasRef}
             data-role="canvas"
             className="dotgrid-canvas relative mx-auto"
-            style={{ width: 920, height: 1700 }}
+            style={{ width: canvasSize.w, height: canvasSize.h }}
+            onPointerDown={(e) => {
+              if (locked) return;
+              if (e.target !== e.currentTarget) return;
+              const rect = canvasRef.current!.getBoundingClientRect();
+              const x = e.clientX - rect.left + canvasRef.current!.scrollLeft;
+              const y = e.clientY - rect.top + canvasRef.current!.scrollTop;
+              if (!e.shiftKey) setSelectedIds(new Set());
+              setMarquee({ x1: x, y1: y, x2: x, y2: y });
+            }}
           >
             {nodes.length === 0 && (
               <div className="pointer-events-none absolute top-5 left-5 max-w-[280px] rounded-lg border border-border bg-[rgba(30,27,46,0.85)] px-3 py-2 text-[12.5px] leading-[1.5] text-muted2">
-                💡 Seret node dari kiri ke sini (atau sentuh &amp; tahan di layar sentuh). Tarik garis
-                dari titik di bawah node ke arah node tujuan untuk menyambungkan.
+                {isHorizontal ? (
+                  <>💡 Seret node dari kiri ke sini. Hover sebuah node untuk memunculkan titik di keempat sisinya, lalu tarik ke node tujuan — garis akan menempel ke sisi terdekat.</>
+                ) : (
+                  <>
+                    💡 Seret node dari kiri ke sini (atau sentuh &amp; tahan di layar sentuh). Tarik garis
+                    dari titik di bawah node ke arah node tujuan untuk menyambungkan.
+                  </>
+                )}
               </div>
             )}
 
@@ -453,16 +705,12 @@ export function FlowBuilderCanvas({
                 const from = nodes.find((n) => n.id === c.sourceNodeId);
                 const to = nodes.find((n) => n.id === c.targetNodeId);
                 if (!from || !to) return null;
-                const x1 = from.decision
-                  ? from.x + NODE_W * (c.connectionType === "NO" ? 0.65 : 0.35)
-                  : from.x + NODE_W / 2;
-                const y1 = from.y + NODE_H;
-                const x2 = to.x + NODE_W / 2,
-                  y2 = to.y;
+                const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
+                const d = routedPaths?.get(c.id) ?? previewPath(fromPort, fromSide, toPort, toSide);
                 return (
                   <path
                     key={c.id}
-                    d={bezierPath(x1, y1, x2, y2)}
+                    d={d}
                     stroke={EDGE_COLOR[c.connectionType]}
                     strokeWidth={2}
                     fill="none"
@@ -472,7 +720,7 @@ export function FlowBuilderCanvas({
               })}
               {connectDrag && (
                 <path
-                  d={bezierPath(connectDrag.x1, connectDrag.y1, connectDrag.x2, connectDrag.y2)}
+                  d={previewPath({ x: connectDrag.x1, y: connectDrag.y1 }, connectDrag.fromSide, { x: connectDrag.x2, y: connectDrag.y2 }, connectDrag.toSide)}
                   stroke="var(--gold)"
                   strokeWidth={2}
                   strokeDasharray="5,4"
@@ -482,20 +730,58 @@ export function FlowBuilderCanvas({
               )}
             </svg>
 
+            {marquee && (
+              <div
+                className="pointer-events-none absolute z-[5] border border-dashed border-teal bg-teal/10"
+                style={{
+                  left: Math.min(marquee.x1, marquee.x2),
+                  top: Math.min(marquee.y1, marquee.y2),
+                  width: Math.abs(marquee.x2 - marquee.x1),
+                  height: Math.abs(marquee.y2 - marquee.y1),
+                }}
+              />
+            )}
+
             {nodes.map((node) => (
               <div
                 key={node.id}
                 data-node-id={node.id}
-                className="absolute w-[168px] touch-none select-none rounded-[10px] border-[1.5px] border-border-light bg-surface p-[9px_11px] shadow-[0_4px_12px_rgba(0,0,0,0.25)]"
+                className={`group absolute w-[168px] touch-none select-none rounded-[10px] border-[1.5px] bg-surface p-[9px_11px] shadow-[0_4px_12px_rgba(0,0,0,0.25)] transition-colors ${
+                  snapTargetId === node.id
+                    ? "border-gold"
+                    : isHorizontal && hoveredNodeId === node.id
+                    ? "border-teal"
+                    : "border-border-light"
+                } ${selectedIds.has(node.id) ? "outline outline-2 outline-offset-2 outline-teal" : ""}`}
                 style={{ left: node.x, top: node.y }}
                 onPointerDown={(e) => {
+                  e.stopPropagation();
                   if (locked) return;
                   const target = e.target as HTMLElement;
                   if (target.closest("[data-role=delete]") || target.closest("[data-role^=handle-]")) return;
-                  setDragState({ id: node.id, startX: e.clientX, startY: e.clientY, origX: node.x, origY: node.y });
+                  if (e.shiftKey) {
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(node.id)) next.delete(node.id);
+                      else next.add(node.id);
+                      return next;
+                    });
+                    return;
+                  }
+                  const group = selectedIds.has(node.id) && selectedIds.size > 1 ? selectedIds : new Set([node.id]);
+                  if (group.size === 1) setSelectedIds(group);
+                  const origins: Record<string, { x: number; y: number }> = {};
+                  nodesRef.current.forEach((n) => {
+                    if (group.has(n.id)) origins[n.id] = { x: n.x, y: n.y };
+                  });
+                  setDragState({ startX: e.clientX, startY: e.clientY, origins });
                 }}
+                onPointerEnter={() => setHoveredNodeId(node.id)}
+                onPointerLeave={() => setHoveredNodeId((h) => (h === node.id ? null : h))}
               >
-                <div className="absolute top-[-7px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-border-light bg-surface3" />
+                {!isHorizontal && (
+                  <div className="absolute top-[-7px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-border-light bg-surface3" />
+                )}
                 <div className="flex items-center gap-2">
                   <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[12px]">
                     {node.icon}
@@ -514,28 +800,73 @@ export function FlowBuilderCanvas({
                 </span>
 
                 {node.decision ? (
-                  <>
+                  isHorizontal ? (
+                    <>
+                      <div
+                        data-role="handle-yes"
+                        title="Tarik untuk jalur 'Ya'"
+                        className="absolute right-[-9px] z-[6] h-[17px] w-[17px] -translate-y-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-success transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
+                        style={{ top: "25%" }}
+                        onPointerDown={(e) => startConnectDrag(node, e, { handle: "yes" })}
+                      />
+                      <span className="absolute right-[-26px] top-[10%] text-[9px] font-semibold text-success">Ya</span>
+                      <div
+                        data-role="handle-no"
+                        title="Tarik untuk jalur 'Tidak'"
+                        className="absolute right-[-9px] z-[6] h-[17px] w-[17px] -translate-y-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-danger transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
+                        style={{ top: "75%" }}
+                        onPointerDown={(e) => startConnectDrag(node, e, { handle: "no" })}
+                      />
+                      <span className="absolute right-[-38px] top-[62%] text-[9px] font-semibold text-danger">Tidak</span>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        data-role="handle-yes"
+                        title="Tarik untuk jalur 'Ya'"
+                        className="absolute bottom-[-9px] z-[6] h-[17px] w-[17px] -translate-x-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-success transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
+                        style={{ left: "35%" }}
+                        onPointerDown={(e) => startConnectDrag(node, e, { handle: "yes" })}
+                      />
+                      <span className="absolute bottom-[-24px] text-[9px] font-semibold text-success" style={{ left: "27%" }}>
+                        Ya
+                      </span>
+                      <div
+                        data-role="handle-no"
+                        title="Tarik untuk jalur 'Tidak'"
+                        className="absolute bottom-[-9px] z-[6] h-[17px] w-[17px] -translate-x-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-danger transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
+                        style={{ left: "65%" }}
+                        onPointerDown={(e) => startConnectDrag(node, e, { handle: "no" })}
+                      />
+                      <span className="absolute bottom-[-24px] text-[9px] font-semibold text-danger" style={{ left: "60%" }}>
+                        Tidak
+                      </span>
+                    </>
+                  )
+                ) : isHorizontal ? (
+                  SIDES.map((side) => (
                     <div
-                      data-role="handle-yes"
-                      title="Tarik untuk jalur 'Ya'"
-                      className="absolute bottom-[-9px] z-[6] h-[17px] w-[17px] -translate-x-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-success transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
-                      style={{ left: "35%" }}
-                      onPointerDown={(e) => startConnectDrag(node, e, "yes")}
+                      key={side}
+                      data-role={`handle-${side}`}
+                      title={
+                        node.nodeType === "ERROR"
+                          ? "Tarik untuk jalur pemulihan (recovery)"
+                          : "Tarik untuk menyambungkan ke node lain"
+                      }
+                      className={`absolute z-[6] h-[15px] w-[15px] touch-none cursor-crosshair rounded-full border-[3px] border-ink opacity-0 transition-all after:absolute after:-inset-3 after:content-[''] group-hover:opacity-100 hover:scale-125 ${
+                        node.nodeType === "ERROR" ? "bg-gold" : "bg-teal"
+                      } ${
+                        side === "top"
+                          ? "top-[-8px] left-1/2 -translate-x-1/2"
+                          : side === "bottom"
+                          ? "bottom-[-8px] left-1/2 -translate-x-1/2"
+                          : side === "left"
+                          ? "left-[-8px] top-1/2 -translate-y-1/2"
+                          : "right-[-8px] top-1/2 -translate-y-1/2"
+                      }`}
+                      onPointerDown={(e) => startConnectDrag(node, e, { side })}
                     />
-                    <span className="absolute bottom-[-24px] text-[9px] font-semibold text-success" style={{ left: "27%" }}>
-                      Ya
-                    </span>
-                    <div
-                      data-role="handle-no"
-                      title="Tarik untuk jalur 'Tidak'"
-                      className="absolute bottom-[-9px] z-[6] h-[17px] w-[17px] -translate-x-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-danger transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
-                      style={{ left: "65%" }}
-                      onPointerDown={(e) => startConnectDrag(node, e, "no")}
-                    />
-                    <span className="absolute bottom-[-24px] text-[9px] font-semibold text-danger" style={{ left: "60%" }}>
-                      Tidak
-                    </span>
-                  </>
+                  ))
                 ) : (
                   <div
                     data-role="handle-out"
