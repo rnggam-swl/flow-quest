@@ -38,6 +38,9 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetResult, setResetResult] = useState<{ userId: string; email: string; password: string } | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setPassword(randomPassword());
@@ -89,6 +92,29 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
       setResetError("Terjadi kesalahan jaringan.");
     } finally {
       setResettingId(null);
+    }
+  }
+
+  async function deleteParticipant(userId: string) {
+    setDeletingId(userId);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/admin/participants", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? "Gagal menghapus peserta.");
+        return;
+      }
+      setConfirmDeleteId(null);
+      router.refresh();
+    } catch {
+      setDeleteError("Terjadi kesalahan jaringan.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -175,6 +201,11 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
             ⚠️ {resetError}
           </div>
         )}
+        {deleteError && (
+          <div className="mb-2.5 rounded-lg border border-danger bg-[rgba(242,112,92,0.1)] px-3.5 py-2.5 text-[13px] text-danger">
+            ⚠️ {deleteError}
+          </div>
+        )}
         <div className="overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full border-collapse text-[13.5px]">
             <thead>
@@ -184,6 +215,7 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
                 <th className="px-4 py-2.5 font-semibold">Sekolah / Kelompok</th>
                 <th className="px-4 py-2.5 font-semibold">Status</th>
                 <th className="px-4 py-2.5 font-semibold">Password</th>
+                <th className="px-4 py-2.5 font-semibold"></th>
               </tr>
             </thead>
             <tbody>
@@ -211,11 +243,42 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
                       </button>
                     )}
                   </td>
+                  <td className="px-4 py-2.5">
+                    {confirmDeleteId === p.userId ? (
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <span className="text-[12.5px] text-muted2">Yakin?</span>
+                        <button
+                          className="text-[12.5px] font-semibold text-danger underline disabled:opacity-50"
+                          disabled={deletingId === p.userId}
+                          onClick={() => deleteParticipant(p.userId)}
+                        >
+                          {deletingId === p.userId ? "Menghapus…" : "Ya, Hapus"}
+                        </button>
+                        <button
+                          className="text-[12.5px] text-muted2 underline disabled:opacity-50"
+                          disabled={deletingId === p.userId}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="text-[12.5px] text-danger underline"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setConfirmDeleteId(p.userId);
+                        }}
+                      >
+                        Hapus
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {existing.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-muted2">
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted2">
                     Belum ada peserta terdaftar.
                   </td>
                 </tr>
