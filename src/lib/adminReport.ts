@@ -77,7 +77,11 @@ type FlowSubmissionWithDetail = {
 interface ReportContext {
   quest1SessionQuest: (SessionQuest & { Quest: Quest }) | undefined;
   flowSessionQuests: (SessionQuest & { Quest: Quest })[];
-  teamIdByUserId: Map<string, string>;
+  // A userId can map to more than one team row — `ensureSoloTeam`'s check-then-create isn't
+  // race-proof, so a user occasionally ends up with duplicate (mostly empty) solo teams in the
+  // same session. We look across all of them rather than picking one arbitrarily, so a
+  // participant's real submission isn't silently missed in favor of an empty duplicate.
+  teamIdsByUserId: Map<string, string[]>;
   submissionByTeamQuest: Map<string, FlowSubmissionWithDetail>;
   logsByUser: Map<string, ActivityLog[]>;
   reflectionByUserOrder: Map<string, string>;
@@ -88,7 +92,7 @@ function assembleParticipantReport(
   ctx: ReportContext
 ): ParticipantReport {
   const userId = p.participantId;
-  const teamId = ctx.teamIdByUserId.get(userId);
+  const teamIds = ctx.teamIdsByUserId.get(userId) ?? [];
   const userLogs = ctx.logsByUser.get(userId) ?? [];
 
   let quest1: Quest1Report | null = null;
@@ -120,7 +124,9 @@ function assembleParticipantReport(
     const max = getRubricMax(sq.order);
     const maxScore =
       max.goal + max.flow + max.logic + max.constraint + max.edgeCase + max.simplicity + (sq.order === 2 || sq.order === 5 ? 10 : 0);
-    const submission = teamId ? ctx.submissionByTeamQuest.get(`${teamId}:${sq.questId}`) : undefined;
+    const submission = teamIds
+      .map((tid) => ctx.submissionByTeamQuest.get(`${tid}:${sq.questId}`))
+      .find((s): s is FlowSubmissionWithDetail => s !== undefined);
 
     if (!submission) {
       return {
@@ -226,8 +232,14 @@ export async function getSessionFullReport(sessionId: string): Promise<Participa
     prisma.team.findMany({ where: { sessionId }, include: { TeamMember: true } }),
   ]);
 
-  const teamIdByUserId = new Map<string, string>();
-  teams.forEach((t) => t.TeamMember.forEach((m) => teamIdByUserId.set(m.userId, t.id)));
+  const teamIdsByUserId = new Map<string, string[]>();
+  teams.forEach((t) =>
+    t.TeamMember.forEach((m) => {
+      const list = teamIdsByUserId.get(m.userId) ?? [];
+      list.push(t.id);
+      teamIdsByUserId.set(m.userId, list);
+    })
+  );
   const teamIds = teams.map((t) => t.id);
   const questIds = sessionQuests.map((sq) => sq.questId);
 
@@ -254,7 +266,7 @@ export async function getSessionFullReport(sessionId: string): Promise<Participa
   const ctx: ReportContext = {
     quest1SessionQuest: sessionQuests.find((sq) => sq.order === 1),
     flowSessionQuests: sessionQuests.filter((sq) => sq.order >= 2),
-    teamIdByUserId,
+    teamIdsByUserId,
     submissionByTeamQuest: new Map(flowSubmissions.map((s) => [`${s.teamId}:${s.questId}`, s])),
     logsByUser,
     reflectionByUserOrder: reflectionMap(reflections),
@@ -273,31 +285,34 @@ export async function getParticipantReport(sessionId: string, sessionParticipant
   // The team lookup is filtered through a nested relation (TeamMember -> User -> SessionParticipant)
   // instead of first awaiting the participant row for its userId — that turns what would otherwise
   // be a dependent 2nd round trip into one more query in the same parallel stage, which matters
-  // given this app's DB round-trip latency (see getAdminOverview).
-  const [participant, sessionQuests, team] = await Promise.all([
+  // given this app's DB round-trip latency (see getAdminOverview). It's `findMany`, not `findFirst`,
+  // because `ensureSoloTeam`'s check-then-create isn't race-proof — a participant can end up with
+  // more than one (mostly empty) solo team in the same session, and picking just one arbitrarily
+  // risks picking an empty duplicate over the one that actually holds their submissions.
+  const [participant, sessionQuests, teams] = await Promise.all([
     prisma.sessionParticipant.findFirst({ where: { id: sessionParticipantId, sessionId }, include: { User: true } }),
     prisma.sessionQuest.findMany({ where: { sessionId }, orderBy: { order: "asc" }, include: { Quest: true } }),
-    prisma.team.findFirst({
+    prisma.team.findMany({
       where: { sessionId, TeamMember: { some: { User: { SessionParticipant: { some: { id: sessionParticipantId } } } } } },
     }),
   ]);
   if (!participant) return null;
   const userId = participant.participantId;
-  const teamId = team?.id;
+  const teamIds = teams.map((t) => t.id);
   const questIds = sessionQuests.map((sq) => sq.questId);
 
   const [flowSubmissions, sessionScopedLogs, teamScopedLogs, reflections] = await Promise.all([
-    teamId
+    teamIds.length
       ? prisma.flowSubmission.findMany({
-          where: { teamId, questId: { in: questIds } },
+          where: { teamId: { in: teamIds }, questId: { in: questIds } },
           include: { FlowNode: true, FlowConnection: true, Score: true },
         })
       : Promise.resolve([] as FlowSubmissionWithDetail[]),
     prisma.activityLog.findMany({
       where: { sessionId, userId, event: { in: ["QUEST_STARTED", "QUEST_COMPLETED", "FOCUS_LOST"] } },
     }),
-    teamId
-      ? prisma.activityLog.findMany({ where: { teamId, event: { in: [...REVISION_EVENTS] } } })
+    teamIds.length
+      ? prisma.activityLog.findMany({ where: { teamId: { in: teamIds }, event: { in: [...REVISION_EVENTS] } } })
       : Promise.resolve([] as ActivityLog[]),
     prisma.reflection.findMany({ where: { sessionId, userId } }),
   ]);
@@ -309,7 +324,7 @@ export async function getParticipantReport(sessionId: string, sessionParticipant
   const ctx: ReportContext = {
     quest1SessionQuest: sessionQuests.find((sq) => sq.order === 1),
     flowSessionQuests: sessionQuests.filter((sq) => sq.order >= 2),
-    teamIdByUserId: teamId ? new Map([[userId, teamId]]) : new Map(),
+    teamIdsByUserId: teamIds.length ? new Map([[userId, teamIds]]) : new Map(),
     submissionByTeamQuest: new Map(flowSubmissions.map((s) => [`${s.teamId}:${s.questId}`, s])),
     logsByUser,
     reflectionByUserOrder: reflectionMap(reflections),

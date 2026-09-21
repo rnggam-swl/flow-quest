@@ -42,16 +42,25 @@ export async function getAdminOverview(sessionId: string) {
     }),
   ]);
 
-  const teamIdByUserId = new Map<string, string>();
+  // A userId can map to more than one team row — `ensureSoloTeam`'s check-then-create isn't
+  // race-proof, so a participant occasionally ends up with duplicate (mostly empty) solo teams
+  // in the same session. Collect every submission across all of a user's teams rather than
+  // picking one team arbitrarily, so a real submission isn't shadowed by an empty duplicate.
+  const teamIdsByUserId = new Map<string, string[]>();
   const submissionsByTeam = new Map<string, (typeof teams)[number]["FlowSubmission"]>();
   teams.forEach((t) => {
-    t.TeamMember.forEach((m) => teamIdByUserId.set(m.userId, t.id));
+    t.TeamMember.forEach((m) => {
+      const list = teamIdsByUserId.get(m.userId) ?? [];
+      list.push(t.id);
+      teamIdsByUserId.set(m.userId, list);
+    });
     submissionsByTeam.set(t.id, t.FlowSubmission);
   });
 
   const rows: AdminParticipantRow[] = participants.map((p) => {
-    const teamId = teamIdByUserId.get(p.participantId);
-    const latest = teamId ? pickLatestSubmission(submissionsByTeam.get(teamId) ?? []) : undefined;
+    const teamIds = teamIdsByUserId.get(p.participantId) ?? [];
+    const allSubmissions = teamIds.flatMap((teamId) => submissionsByTeam.get(teamId) ?? []);
+    const latest = pickLatestSubmission(allSubmissions);
     return {
       sessionParticipantId: p.id,
       userId: p.participantId,
