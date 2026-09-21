@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import { FocusGuard } from "@/components/FocusGuard";
 import { getValidatorForOrder, type ConnectionKind, type NodeLibItem } from "@/lib/flowScoring";
 import {
   autoLayout,
@@ -838,6 +839,7 @@ export function FlowBuilderCanvas({
   const timeLow = secondsLeft <= 30;
 
   return (
+    <FocusGuard>
     <div className="flex h-[calc(100vh-61px)] flex-col">
       {locked && (
         <div className="border-b border-danger bg-[rgba(242,112,92,0.15)] px-4 py-2.5 text-center text-[13.5px] font-semibold text-[#FFD9D2]">
@@ -1350,5 +1352,6 @@ export function FlowBuilderCanvas({
         </div>
       )}
     </div>
+    </FocusGuard>
   );
 }
