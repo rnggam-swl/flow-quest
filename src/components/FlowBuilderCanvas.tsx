@@ -581,10 +581,17 @@ export function FlowBuilderCanvas({
     let fromSide: Side;
     let fromPort: { x: number; y: number };
     if (from.decision) {
-      fromSide = isHorizontal ? "right" : "bottom";
-      fromPort = isHorizontal
-        ? { x: from.x + NODE_W, y: from.y + NODE_H * (c.connectionType === "NO" ? 0.75 : 0.25) }
-        : { x: from.x + NODE_W * (c.connectionType === "NO" ? 0.65 : 0.35), y: from.y + NODE_H };
+      // Horizontal: Ya continues out the right tip (main flow direction), Tidak drops out the
+      // bottom tip — distinct sides instead of splitting one edge, so the two are unambiguous at a
+      // glance and a backward-pointing "Tidak" (e.g. a retry/error loop) doesn't have to exit toward
+      // the target's opposite side and loop all the way around.
+      if (isHorizontal) {
+        fromSide = c.connectionType === "NO" ? "bottom" : "right";
+        fromPort = sidePoint(fromBox, fromSide);
+      } else {
+        fromSide = "bottom";
+        fromPort = { x: from.x + NODE_W * (c.connectionType === "NO" ? 0.65 : 0.35), y: from.y + NODE_H };
+      }
     } else if (isHorizontal && c.sideFrom) {
       fromSide = c.sideFrom;
       fromPort = sidePoint(fromBox, fromSide);
@@ -610,9 +617,10 @@ export function FlowBuilderCanvas({
     let x1: number, y1: number, fromSide: Side;
     if (isHorizontal) {
       if (node.decision) {
-        fromSide = "right";
-        x1 = node.x + NODE_W;
-        y1 = node.y + NODE_H * (opts?.handle === "no" ? 0.75 : 0.25);
+        fromSide = opts?.handle === "no" ? "bottom" : "right";
+        const p = sidePoint({ x: node.x, y: node.y, w: NODE_W, h: NODE_H }, fromSide);
+        x1 = p.x;
+        y1 = p.y;
       } else {
         fromSide = opts?.side ?? "right";
         const p = sidePoint({ x: node.x, y: node.y, w: NODE_W, h: NODE_H }, fromSide);
@@ -1091,19 +1099,17 @@ export function FlowBuilderCanvas({
                       <div
                         data-role="handle-yes"
                         title="Tarik untuk jalur 'Ya'"
-                        className="absolute right-[-9px] z-[6] h-[17px] w-[17px] -translate-y-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-success transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
-                        style={{ top: "25%" }}
+                        className="absolute right-[-9px] top-1/2 z-[6] h-[17px] w-[17px] -translate-y-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-success transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
                         onPointerDown={(e) => startConnectDrag(node, e, { handle: "yes" })}
                       />
-                      <span className="absolute right-[-26px] top-[10%] text-[9px] font-semibold text-success">Ya</span>
+                      <span className="absolute right-[-22px] top-1/2 -translate-y-1/2 text-[9px] font-semibold text-success">Ya</span>
                       <div
                         data-role="handle-no"
                         title="Tarik untuk jalur 'Tidak'"
-                        className="absolute right-[-9px] z-[6] h-[17px] w-[17px] -translate-y-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-danger transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
-                        style={{ top: "75%" }}
+                        className="absolute bottom-[-9px] left-1/2 z-[6] h-[17px] w-[17px] -translate-x-1/2 touch-none cursor-crosshair rounded-full border-[3px] border-ink bg-danger transition-transform after:absolute after:-inset-3 after:content-[''] hover:scale-125"
                         onPointerDown={(e) => startConnectDrag(node, e, { handle: "no" })}
                       />
-                      <span className="absolute right-[-38px] top-[62%] text-[9px] font-semibold text-danger">Tidak</span>
+                      <span className="absolute bottom-[-22px] left-1/2 -translate-x-1/2 text-[9px] font-semibold text-danger">Tidak</span>
                     </>
                   ) : (
                     <>
