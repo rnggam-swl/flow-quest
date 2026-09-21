@@ -356,7 +356,7 @@ model User {
   avatarUrl           String?
   school              String?
   groupName           String?
-  flowViewMode        FlowViewMode          @default(VERTICAL)
+  flowViewMode        FlowViewMode          @default(HORIZONTAL)
   createdAt           DateTime              @default(now())
   ActivityLog         ActivityLog[]
   AuthSession         AuthSession[]

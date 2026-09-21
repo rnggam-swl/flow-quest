@@ -358,6 +358,15 @@ export interface RouteObstacle extends Box {
  * straight stub perpendicular to each node's edge, then an obstacle-avoiding
  * orthogonal path between the stubs (grid A*), falling back to a direct
  * elbow if the search space is too large or genuinely has no route.
+ *
+ * The source and target nodes are themselves included as obstacles (not
+ * excluded) — only their exact stub cells are force-cleared, inside
+ * `astarRoute`. A node whose exit side always faces the same direction
+ * regardless of where the target actually is (e.g. a Decision node, whose
+ * output is fixed to one side) can need to route "backward" around its own
+ * body to reach a target behind it; excluding the source entirely used to
+ * let that route cut straight back through the node instead of going
+ * around it like any other obstacle.
  */
 export function routeConnection(
   fromPort: Point,
@@ -365,7 +374,6 @@ export function routeConnection(
   toPort: Point,
   toSide: Side,
   obstacles: RouteObstacle[],
-  excludeIds: [string, string],
   canvasSize: { w: number; h: number },
   stub = 22
 ): string {
@@ -374,7 +382,6 @@ export function routeConnection(
   const stubA: Point = { x: fromPort.x + dfx * stub, y: fromPort.y + dfy * stub };
   const stubB: Point = { x: toPort.x + dtx * stub, y: toPort.y + dty * stub };
 
-  const relevant = obstacles.filter((o) => o.id !== excludeIds[0] && o.id !== excludeIds[1]);
   const bounds = {
     minX: Math.min(0, stubA.x, stubB.x) - 60,
     minY: Math.min(0, stubA.y, stubB.y) - 60,
@@ -382,7 +389,7 @@ export function routeConnection(
     maxY: Math.max(canvasSize.h, stubA.y, stubB.y) + 60,
   };
 
-  const routed = astarRoute(stubA, stubB, relevant, bounds);
+  const routed = astarRoute(stubA, stubB, obstacles, bounds);
   const mid = routed ?? elbowJoin(stubA, DIR[fromSide], stubB, DIR[toSide]);
   mid[0] = stubA;
   mid[mid.length - 1] = stubB;

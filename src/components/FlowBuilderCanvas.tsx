@@ -710,7 +710,7 @@ export function FlowBuilderCanvas({
       const to = nodes.find((n) => n.id === c.targetNodeId);
       if (!from || !to) continue;
       const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
-      map.set(c.id, routeConnection(fromPort, fromSide, toPort, toSide, obstacles, [from.id, to.id], canvasSize));
+      map.set(c.id, routeConnection(fromPort, fromSide, toPort, toSide, obstacles, canvasSize));
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -991,12 +991,16 @@ export function FlowBuilderCanvas({
               <div
                 key={node.id}
                 data-node-id={node.id}
-                className={`group absolute w-[168px] touch-none select-none rounded-[10px] border-[1.5px] bg-surface p-[9px_11px] shadow-[0_4px_12px_rgba(0,0,0,0.25)] transition-colors ${
-                  snapTargetId === node.id
-                    ? "border-gold"
-                    : isHorizontal && hoveredNodeId === node.id
-                    ? "border-teal"
-                    : "border-border-light"
+                className={`group absolute h-[58px] w-[168px] touch-none select-none transition-colors ${
+                  node.decision
+                    ? ""
+                    : `rounded-[10px] border-[1.5px] bg-surface p-[9px_11px] shadow-[0_4px_12px_rgba(0,0,0,0.25)] ${
+                        snapTargetId === node.id
+                          ? "border-gold"
+                          : isHorizontal && hoveredNodeId === node.id
+                          ? "border-teal"
+                          : "border-border-light"
+                      }`
                 } ${selectedIds.has(node.id) ? "outline outline-2 outline-offset-2 outline-teal" : ""}`}
                 style={{ left: node.x, top: node.y }}
                 onPointerDown={(e) => {
@@ -1027,22 +1031,59 @@ export function FlowBuilderCanvas({
                 {!isHorizontal && (
                   <div className="pointer-events-none absolute top-[-7px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-border-light bg-surface3" />
                 )}
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[12px]">
-                    {node.icon}
-                  </div>
-                  <div className="flex-1 text-[13px] font-semibold">{node.label}</div>
-                  <button
-                    data-role="delete"
-                    className="flex-shrink-0 rounded px-1 text-[15px] leading-none text-muted2 hover:bg-surface3 hover:text-danger"
-                    onClick={() => deleteNode(node.id)}
+                {node.decision ? (
+                  // Diamond shape (the flowchart convention for a conditional/decision step). Clip-path
+                  // lives on this inner wrapper, not the outer node div, so it never clips the connection
+                  // handles/delete-dots that are deliberately positioned outside the box's own bounds.
+                  // Its inscribed safe area is much narrower than the bounding box, so unlike other node
+                  // types it drops the node-type caption line and keeps only a single centered icon+label
+                  // (+ delete) row — the diamond outline itself already signals "this is a decision".
+                  <div
+                    className={`absolute inset-0 flex items-center justify-center gap-1.5 border-[1.5px] bg-surface px-6 shadow-[0_4px_12px_rgba(0,0,0,0.25)] ${
+                      snapTargetId === node.id
+                        ? "border-gold"
+                        : isHorizontal && hoveredNodeId === node.id
+                        ? "border-teal"
+                        : "border-border-light"
+                    }`}
+                    style={{ clipPath: "polygon(50% 2%, 98% 50%, 50% 98%, 2% 50%)" }}
                   >
-                    ×
-                  </button>
-                </div>
-                <span className="mt-[3px] block text-[9.5px] uppercase tracking-[0.5px] text-muted2">
-                  {node.nodeType}
-                </span>
+                    <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md text-[11px]">
+                      {node.icon}
+                    </div>
+                    <div className="min-w-0 flex-1 truncate text-center text-[11.5px] font-semibold" title={node.label}>
+                      {node.label}
+                    </div>
+                    <button
+                      data-role="delete"
+                      className="flex-shrink-0 rounded px-0.5 text-[13px] leading-none text-muted2 hover:bg-surface3 hover:text-danger"
+                      onClick={() => deleteNode(node.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[12px]">
+                        {node.icon}
+                      </div>
+                      <div className="min-w-0 flex-1 truncate text-[13px] font-semibold" title={node.label}>
+                        {node.label}
+                      </div>
+                      <button
+                        data-role="delete"
+                        className="flex-shrink-0 rounded px-1 text-[15px] leading-none text-muted2 hover:bg-surface3 hover:text-danger"
+                        onClick={() => deleteNode(node.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <span className="mt-[3px] block text-[9.5px] uppercase tracking-[0.5px] text-muted2">
+                      {node.nodeType}
+                    </span>
+                  </>
+                )}
 
                 {node.decision ? (
                   isHorizontal ? (
