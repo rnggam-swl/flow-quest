@@ -839,7 +839,7 @@ export function FlowBuilderCanvas({
   const timeLow = secondsLeft <= 30;
 
   return (
-    <FocusGuard>
+    <FocusGuard questOrder={questOrder}>
     <div className="flex h-[calc(100vh-61px)] flex-col">
       {locked && (
         <div className="border-b border-danger bg-[rgba(242,112,92,0.15)] px-4 py-2.5 text-center text-[13.5px] font-semibold text-[#FFD9D2]">

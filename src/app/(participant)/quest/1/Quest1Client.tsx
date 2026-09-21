@@ -49,7 +49,7 @@ export function Quest1Client({ alreadyCompleted }: { alreadyCompleted: boolean }
   }
 
   return (
-    <FocusGuard>
+    <FocusGuard questOrder={1}>
     <div className="mx-auto max-w-[600px] px-5 pt-[50px] pb-20">
       <Eyebrow>Quest 1 · Find the Goal</Eyebrow>
       <Headline className="text-[26px]">{QUEST1_QUESTION}</Headline>

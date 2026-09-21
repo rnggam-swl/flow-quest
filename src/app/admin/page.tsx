@@ -34,7 +34,11 @@ export default async function AdminDashboardPage() {
         ·{" "}
         <Link href="/admin/participants" className="text-teal underline">
           Tambah peserta →
-        </Link>
+        </Link>{" "}
+        ·{" "}
+        <a href="/api/admin/export" className="text-teal underline">
+          Download Data Aktivitas (CSV) ↓
+        </a>
       </Sub>
 
       <div className="mb-7 grid grid-cols-2 gap-3.5 md:grid-cols-4">
@@ -57,7 +61,6 @@ export default async function AdminDashboardPage() {
             </thead>
             <tbody>
               {rows.map((r) => {
-                const clickable = Boolean(r.submissionId);
                 const rowContent = (
                   <>
                     <td className="border-t border-border px-4 py-3.5 text-[14px]">
@@ -75,12 +78,10 @@ export default async function AdminDashboardPage() {
                     </td>
                   </>
                 );
-                return clickable ? (
-                  <ClickableRow key={r.sessionParticipantId} href={`/admin/submissions/${r.submissionId}`}>
+                return (
+                  <ClickableRow key={r.sessionParticipantId} href={`/admin/participant/${r.sessionParticipantId}`}>
                     {rowContent}
                   </ClickableRow>
-                ) : (
-                  <tr key={r.sessionParticipantId}>{rowContent}</tr>
                 );
               })}
               {rows.length === 0 && (

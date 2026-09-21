@@ -408,6 +408,7 @@ enum ActivityEventType {
   FLOW_SUBMITTED
   REFLECTION_SUBMITTED
   TEAM_MESSAGE
+  FOCUS_LOST
 }
 
 enum AppRole {

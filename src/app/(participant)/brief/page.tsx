@@ -24,6 +24,9 @@ export default async function BriefPage() {
         Lima quest membawa kamu dari memahami tujuan pengguna sampai menyusun flow lengkap dengan
         alasannya. Selesaikan berurutan untuk membuka quest berikutnya.
       </Sub>
+      <p className="-mt-3 mb-5 text-[12px] text-muted2">
+        Waktu pengerjaan dan aktivitas kamu di setiap quest dicatat untuk keperluan evaluasi.
+      </p>
 
       {!sessionOpen && (
         <div className="mb-5 rounded-xl border border-gold-dim bg-[rgba(240,172,63,0.08)] px-4 py-3 text-[13.5px] text-gold">
