@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { getValidatorForOrder, type ConnectionKind, type NodeLibItem } from "@/lib/flowScoring";
 import {
   autoLayout,
+  computeAdjustableSegments,
   computeAlignmentSnap,
   dediagonalize,
   nearestSide,
@@ -163,10 +164,13 @@ export function FlowBuilderCanvas({
   const [segmentDrag, setSegmentDrag] = useState<{
     connectionId: string;
     points: Point[];
-    segIndex: number;
+    movingIndices: number[];
     axis: "x" | "y";
   } | null>(null);
-  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
+  // Adjust handles show for a connector once it's clicked (not merely hovered) — a hover-only
+  // reveal made them hard to find reliably, and clashed with only appearing once a route had
+  // enough bends to have an "interior" segment at all.
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const isHorizontal = viewMode === "HORIZONTAL";
   const isBusy = Boolean(dragState || connectDrag || detachDrag || paletteDrag || marquee || segmentDrag);
   const submittingRef = useRef(false);
@@ -255,7 +259,7 @@ export function FlowBuilderCanvas({
         const newCoord = segmentDrag.axis === "x" ? mx : my;
         setSegmentDrag((d) => {
           if (!d) return d;
-          const pts = d.points.map((p, i) => (i === d.segIndex || i === d.segIndex + 1 ? { ...p, [d.axis]: newCoord } : p));
+          const pts = d.points.map((p, i) => (d.movingIndices.includes(i) ? { ...p, [d.axis]: newCoord } : p));
           return { ...d, points: pts };
         });
         return;
@@ -335,7 +339,7 @@ export function FlowBuilderCanvas({
 
     function handleUp(e: PointerEvent) {
       if (segmentDrag) {
-        const mid = simplifyCollinear(segmentDrag.points).slice(1, -1);
+        const mid = simplifyCollinear(dediagonalize(segmentDrag.points)).slice(1, -1);
         setCustomPaths((cp) => ({ ...cp, [segmentDrag.connectionId]: mid }));
         setSegmentDrag(null);
         return;
@@ -509,6 +513,7 @@ export function FlowBuilderCanvas({
     if (!previous) return;
     setConnections((cs) => cs.filter((c) => c.id !== connectionId));
     clearCustomPath(connectionId);
+    setSelectedConnectionId((id) => (id === connectionId ? null : id));
     try {
       const res = await fetch(`/api/quest2/connection/${connectionId}`, { method: "DELETE" });
       if (!res.ok) {
@@ -606,6 +611,22 @@ export function FlowBuilderCanvas({
       flashError("Gagal menghapus node — periksa koneksi internet kamu.");
     }
   }
+
+  /** Delete/Backspace deletes every currently-selected node (each call already handles its own optimistic update + rollback, so firing them all at once is safe). */
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (locked || selectedIds.size === 0) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.isContentEditable) return;
+      e.preventDefault();
+      selectedIds.forEach((id) => void deleteNode(id));
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, locked]);
 
   function runCheck() {
     const result = validate(
@@ -774,7 +795,7 @@ export function FlowBuilderCanvas({
 
   /** The points currently displayed for a connection: a live in-progress segment drag, a saved manual bend, the auto-router's result, or (while busy) the cheap non-avoiding fallback — in that priority order. */
   function getDisplayPoints(c: FlowConnectionVM, from: FlowNodeVM, to: FlowNodeVM): Point[] {
-    if (segmentDrag?.connectionId === c.id) return segmentDrag.points;
+    if (segmentDrag?.connectionId === c.id) return dediagonalize(segmentDrag.points);
     const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
     const custom = customPaths[c.id];
     // dediagonalize covers the case where a node connected to a saved manual bend gets dragged
@@ -932,7 +953,9 @@ export function FlowBuilderCanvas({
             <br />
             6. Saat menggeser node, garis putus-putus emas muncul kalau posisinya sejajar dengan node lain
             <br />
-            7. Hover sebuah garis lalu tarik titik emas di tengahnya untuk mengatur beloknya manual — klik dua kali garis untuk kembali ke rute otomatis
+            7. Klik sebuah garis untuk memunculkan kapsul emas di tiap segmennya — tarik salah satu untuk mengatur beloknya manual, klik dua kali garis untuk kembali ke rute otomatis
+            <br />
+            8. Tekan Delete/Backspace untuk menghapus node yang sedang terpilih (bisa beberapa sekaligus)
           </p>
         </div>
 
@@ -949,6 +972,7 @@ export function FlowBuilderCanvas({
               const x = e.clientX - rect.left + canvasRef.current!.scrollLeft;
               const y = e.clientY - rect.top + canvasRef.current!.scrollTop;
               if (!e.shiftKey) setSelectedIds(new Set());
+              setSelectedConnectionId(null);
               setMarquee({ x1: x, y1: y, x2: x, y2: y });
             }}
           >
@@ -988,9 +1012,13 @@ export function FlowBuilderCanvas({
                 // never overlaps the node's body (which would otherwise steal the pointerdown
                 // and start moving the node instead of grabbing the connector).
                 const handlePos = offsetPoint(toPort, toSide, 11);
-                const showSegmentHandles = hoveredConnectionId === c.id && !isBusy;
+                const isSelected = selectedConnectionId === c.id;
+                const showSegmentHandles = isSelected && !isBusy;
                 return (
                   <g key={c.id}>
+                    {isSelected && (
+                      <path d={d} stroke={EDGE_COLOR[c.connectionType]} strokeWidth={6} strokeOpacity={0.25} fill="none" />
+                    )}
                     <path
                       d={d}
                       stroke={EDGE_COLOR[c.connectionType]}
@@ -998,51 +1026,66 @@ export function FlowBuilderCanvas({
                       fill="none"
                       markerEnd={`url(#arrowhead-${c.connectionType})`}
                     />
-                    {/* Wide invisible hit area: reveals the manual-adjust handles on hover, and double-click reverts a manual bend back to auto-routing. */}
+                    {/* Wide invisible hit area: click selects the connector (revealing the manual-adjust capsules below), double-click reverts a manual bend back to auto-routing. */}
                     <path
                       d={d}
                       stroke="transparent"
                       strokeWidth={14}
                       fill="none"
-                      className="pointer-events-auto"
-                      onPointerEnter={() => !isBusy && setHoveredConnectionId(c.id)}
-                      onPointerLeave={() => setHoveredConnectionId((h) => (h === c.id ? null : h))}
+                      className="pointer-events-auto cursor-pointer"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => setSelectedConnectionId((id) => (id === c.id ? null : c.id))}
                       onDoubleClick={() => clearCustomPath(c.id)}
                     >
-                      <title>{customPaths[c.id] ? "Klik dua kali untuk kembali ke rute otomatis" : "Tarik titik di tengah garis untuk mengatur beloknya manual"}</title>
+                      <title>{customPaths[c.id] ? "Klik untuk pilih, klik dua kali untuk kembali ke rute otomatis" : "Klik garis ini untuk mengatur beloknya manual"}</title>
                     </path>
                     {showSegmentHandles &&
-                      points.slice(1, -2).map((_, idx) => {
-                        const i = idx + 1;
-                        const p1 = points[i];
-                        const p2 = points[i + 1];
-                        const horizontalSeg = p1.y === p2.y;
-                        const midX = (p1.x + p2.x) / 2;
-                        const midY = (p1.y + p2.y) / 2;
+                      computeAdjustableSegments(points).map((seg) => {
+                        const horizontalSeg = seg.axis === "y";
+                        const capW = horizontalSeg ? 26 : 11;
+                        const capH = horizontalSeg ? 11 : 26;
                         return (
-                          <g key={i}>
-                            <circle
-                              cx={midX}
-                              cy={midY}
-                              r={11}
+                          <g key={seg.segIndex}>
+                            <rect
+                              x={seg.midX - capW}
+                              y={seg.midY - capH}
+                              width={capW * 2}
+                              height={capH * 2}
+                              rx={Math.min(capW, capH)}
                               fill="transparent"
                               className={`pointer-events-auto ${horizontalSeg ? "cursor-ns-resize" : "cursor-ew-resize"}`}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
                                 setSegmentDrag({
                                   connectionId: c.id,
-                                  points: points.map((p) => ({ ...p })),
-                                  segIndex: i,
-                                  axis: horizontalSeg ? "y" : "x",
+                                  points: seg.points.map((p) => ({ ...p })),
+                                  movingIndices: seg.movingIndices,
+                                  axis: seg.axis,
                                 });
                               }}
                             >
                               <title>Tarik untuk mengatur belokan garis ini secara manual</title>
-                            </circle>
-                            <circle cx={midX} cy={midY} r={4} fill="var(--gold)" stroke="var(--ink)" strokeWidth={1} className="pointer-events-none" />
+                            </rect>
+                            <rect
+                              x={seg.midX - capW / 2}
+                              y={seg.midY - capH / 2}
+                              width={capW}
+                              height={capH}
+                              rx={Math.min(capW, capH) / 2}
+                              fill="var(--gold)"
+                              stroke="var(--ink)"
+                              strokeWidth={1.5}
+                              className="pointer-events-none"
+                            />
                           </g>
                         );
                       })}
+                    {isSelected && (
+                      <>
+                        <circle cx={points[0].x} cy={points[0].y} r={4} fill={EDGE_COLOR[c.connectionType]} stroke="var(--ink)" strokeWidth={1.5} className="pointer-events-none" />
+                        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={4} fill={EDGE_COLOR[c.connectionType]} stroke="var(--ink)" strokeWidth={1.5} className="pointer-events-none" />
+                      </>
+                    )}
                     <circle
                       cx={handlePos.x}
                       cy={handlePos.y}

@@ -191,6 +191,49 @@ export function dediagonalize(points: Point[]): Point[] {
   return out;
 }
 
+export interface AdjustableSegment {
+  /** The points array this segment's indices refer to — includes a synthetic midpoint if the original path had no bend at all. */
+  points: Point[];
+  segIndex: number;
+  midX: number;
+  midY: number;
+  axis: "x" | "y";
+  /** Which point indices in `points` should move (both get set to the same dragged coordinate) — a port-adjacent segment only moves its far end, so the near end stays fixed to the node. */
+  movingIndices: number[];
+}
+
+/**
+ * Every segment of a connector's polyline that can be grabbed and dragged
+ * perpendicular to itself to manually override the auto-routed path —
+ * including the very first/last segments (which touch a node's port): those
+ * only let the *far* end move, since the port-adjacent end must stay fixed
+ * to keep leaving the node perpendicular to its edge. A perfectly straight
+ * two-point connector (no bend at all) gets one synthetic bend inserted at
+ * its midpoint so there's still something to grab.
+ */
+export function computeAdjustableSegments(points: Point[]): AdjustableSegment[] {
+  let base = points;
+  if (base.length === 2) {
+    const mid = { x: (base[0].x + base[1].x) / 2, y: (base[0].y + base[1].y) / 2 };
+    base = [base[0], mid, base[1]];
+  }
+  const segments: AdjustableSegment[] = [];
+  for (let i = 0; i < base.length - 1; i++) {
+    const p1 = base[i];
+    const p2 = base[i + 1];
+    const isFirst = i === 0;
+    const isLast = i === base.length - 2;
+    const horizontalSeg = p1.y === p2.y;
+    const axis: "x" | "y" = horizontalSeg ? "y" : "x";
+    const movingIndices: number[] = [];
+    if (!isFirst) movingIndices.push(i);
+    if (!isLast) movingIndices.push(i + 1);
+    if (movingIndices.length === 0) movingIndices.push(i, i + 1);
+    segments.push({ points: base, segIndex: i, midX: (p1.x + p2.x) / 2, midY: (p1.y + p2.y) / 2, axis, movingIndices });
+  }
+  return segments;
+}
+
 /** Straight-line orthogonal join between two already-offset points, with at most one or two 90-degree bends. */
 function elbowJoin(a: Point, dirA: [number, number], b: Point, dirB: [number, number]): Point[] {
   const horizA = dirA[0] !== 0;
@@ -275,7 +318,11 @@ class MinHeap {
 }
 
 const CELL = 14;
-const TURN_PENALTY = 4;
+// Weighed well above the 1-per-cell step cost so the search strongly prefers a longer-but-straighter
+// route over a shorter one with extra bends — A* with an admissible heuristic still finds the
+// lowest-cost path, so raising this reliably trims the "zigzag"/S-shaped routes that a lower penalty
+// left in place for nodes that aren't aligned with each other.
+const TURN_PENALTY = 9;
 const MAX_CELLS = 40000;
 
 function snap(v: number) {
