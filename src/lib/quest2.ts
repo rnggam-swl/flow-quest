@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { getLatestEnrollment, getQuestList } from "@/lib/participant";
 import { ensureSoloTeam } from "@/lib/soloTeam";
 import { canParticipantPlay } from "@/lib/sessionAccess";
+import type { Prisma } from "@/generated/prisma/client";
 import {
   runFlowValidation,
   runQuest3Validation,
@@ -47,24 +48,23 @@ export function remainingSeconds(startedAt: Date, timeLimitMinutes: number) {
   return Math.max(0, Math.ceil((totalMs - elapsedMs) / 1000));
 }
 
+type LoadedSubmission = Prisma.FlowSubmissionGetPayload<{
+  include: { FlowNode: true; FlowConnection: true; Quest: true };
+}>;
+
 /**
  * Scores the submission's current nodes/connections, persists Score, marks
  * the FlowSubmission SUBMITTED/TIME_EXPIRED, and awards quest XP exactly once
- * (only on the DRAFT -> non-DRAFT transition).
+ * (only on the DRAFT -> non-DRAFT transition). Takes an already-loaded
+ * submission (see `finalizeSubmission` below for the fetch-by-id variant) so
+ * a caller that already has one on hand — like the submit route, which needs
+ * it for the ownership check anyway — doesn't pay for a second round-trip to
+ * re-fetch the same row.
  */
-export async function finalizeSubmission(params: {
-  submissionId: string;
-  teamId: string;
-  questId: string;
-  userId: string;
-  sessionId: string;
-  timeExpired: boolean;
-}) {
-  const submission = await prisma.flowSubmission.findUniqueOrThrow({
-    where: { id: params.submissionId },
-    include: { FlowNode: true, FlowConnection: true, Quest: true },
-  });
-
+export async function finalizeLoadedSubmission(
+  submission: LoadedSubmission,
+  params: { teamId: string; userId: string; sessionId: string; timeExpired: boolean }
+) {
   const validate = validatorFor(submission.Quest.order);
   const validation: FlowValidationResult = validate(
     submission.FlowNode.map((n) => ({ id: n.id, label: n.label })),
@@ -78,40 +78,43 @@ export async function finalizeSubmission(params: {
   const wasAlreadyFinal = submission.status !== "DRAFT";
   const timeSpentSeconds = Math.round((Date.now() - submission.startedAt.getTime()) / 1000);
 
-  const updatedSubmission = await prisma.flowSubmission.update({
-    where: { id: submission.id },
-    data: {
-      status: params.timeExpired ? "TIME_EXPIRED" : "SUBMITTED",
-      submittedAt: new Date(),
-      timeSpentSeconds,
-    },
-  });
-
-  await prisma.score.upsert({
-    where: { submissionId: submission.id },
-    update: {
-      goalScore: validation.goalScore,
-      flowScore: validation.flowScore,
-      logicScore: validation.logicScore,
-      constraintScore: validation.constraintScore,
-      edgeCaseScore: validation.edgeCaseScore,
-      simplicityScore: validation.simplicityScore,
-      totalScore: validation.totalScore,
-      updatedAt: new Date(),
-    },
-    create: {
-      id: crypto.randomUUID(),
-      submissionId: submission.id,
-      goalScore: validation.goalScore,
-      flowScore: validation.flowScore,
-      logicScore: validation.logicScore,
-      constraintScore: validation.constraintScore,
-      edgeCaseScore: validation.edgeCaseScore,
-      simplicityScore: validation.simplicityScore,
-      totalScore: validation.totalScore,
-      updatedAt: new Date(),
-    },
-  });
+  // The submission-status update and the score upsert are independent writes — run them
+  // concurrently instead of waiting on each in turn.
+  const [updatedSubmission] = await Promise.all([
+    prisma.flowSubmission.update({
+      where: { id: submission.id },
+      data: {
+        status: params.timeExpired ? "TIME_EXPIRED" : "SUBMITTED",
+        submittedAt: new Date(),
+        timeSpentSeconds,
+      },
+    }),
+    prisma.score.upsert({
+      where: { submissionId: submission.id },
+      update: {
+        goalScore: validation.goalScore,
+        flowScore: validation.flowScore,
+        logicScore: validation.logicScore,
+        constraintScore: validation.constraintScore,
+        edgeCaseScore: validation.edgeCaseScore,
+        simplicityScore: validation.simplicityScore,
+        totalScore: validation.totalScore,
+        updatedAt: new Date(),
+      },
+      create: {
+        id: crypto.randomUUID(),
+        submissionId: submission.id,
+        goalScore: validation.goalScore,
+        flowScore: validation.flowScore,
+        logicScore: validation.logicScore,
+        constraintScore: validation.constraintScore,
+        edgeCaseScore: validation.edgeCaseScore,
+        simplicityScore: validation.simplicityScore,
+        totalScore: validation.totalScore,
+        updatedAt: new Date(),
+      },
+    }),
+  ]);
 
   if (!wasAlreadyFinal) {
     const isLastQuest = submission.Quest.order >= LAST_QUEST_ORDER;
@@ -126,7 +129,8 @@ export async function finalizeSubmission(params: {
     });
   }
 
-  await logActivity({
+  // Best-effort activity log — the client doesn't need to wait on it to get its result back.
+  void logActivity({
     event: "FLOW_SUBMITTED",
     userId: params.userId,
     teamId: params.teamId,
@@ -136,6 +140,22 @@ export async function finalizeSubmission(params: {
   });
 
   return { submission: updatedSubmission, validation };
+}
+
+/** Fetch-by-id variant of `finalizeLoadedSubmission`, for callers that don't already have the submission loaded. */
+export async function finalizeSubmission(params: {
+  submissionId: string;
+  teamId: string;
+  questId: string;
+  userId: string;
+  sessionId: string;
+  timeExpired: boolean;
+}) {
+  const submission = await prisma.flowSubmission.findUniqueOrThrow({
+    where: { id: params.submissionId },
+    include: { FlowNode: true, FlowConnection: true, Quest: true },
+  });
+  return finalizeLoadedSubmission(submission, params);
 }
 
 export { computeRationaleScore };

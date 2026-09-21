@@ -7,13 +7,17 @@ import { getValidatorForOrder, type ConnectionKind, type NodeLibItem } from "@/l
 import {
   autoLayout,
   computeAlignmentSnap,
+  dediagonalize,
   nearestSide,
   offsetPoint,
-  previewPath,
-  routeConnection,
+  previewPoints,
+  pointsToPath,
+  routeConnectionPoints,
   sidePoint,
+  simplifyCollinear,
   OPPOSITE_SIDE,
   type AlignGuide,
+  type Point,
   type RouteObstacle,
   type Side,
 } from "@/lib/flowLayout";
@@ -152,8 +156,19 @@ export function FlowBuilderCanvas({
   const [savingView, setSavingView] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
+  // Manually-adjusted connector midpoints (Whimsical-style "drag a segment"), keyed by connection
+  // id. Only the intermediate points are stored here — the two ends always stay live-anchored to
+  // the node ports (recomputed fresh every render), so a custom bend survives its nodes moving.
+  const [customPaths, setCustomPaths] = useState<Record<string, Point[]>>({});
+  const [segmentDrag, setSegmentDrag] = useState<{
+    connectionId: string;
+    points: Point[];
+    segIndex: number;
+    axis: "x" | "y";
+  } | null>(null);
+  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
   const isHorizontal = viewMode === "HORIZONTAL";
-  const isBusy = Boolean(dragState || connectDrag || detachDrag || paletteDrag || marquee);
+  const isBusy = Boolean(dragState || connectDrag || detachDrag || paletteDrag || marquee || segmentDrag);
   const submittingRef = useRef(false);
 
   function flashError(message: string) {
@@ -233,6 +248,18 @@ export function FlowBuilderCanvas({
 
   useEffect(() => {
     function handleMove(e: PointerEvent) {
+      if (segmentDrag) {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const mx = e.clientX - rect.left + canvasRef.current!.scrollLeft;
+        const my = e.clientY - rect.top + canvasRef.current!.scrollTop;
+        const newCoord = segmentDrag.axis === "x" ? mx : my;
+        setSegmentDrag((d) => {
+          if (!d) return d;
+          const pts = d.points.map((p, i) => (i === d.segIndex || i === d.segIndex + 1 ? { ...p, [d.axis]: newCoord } : p));
+          return { ...d, points: pts };
+        });
+        return;
+      }
       if (marquee) {
         const rect = canvasRef.current!.getBoundingClientRect();
         const x = e.clientX - rect.left + canvasRef.current!.scrollLeft;
@@ -307,6 +334,12 @@ export function FlowBuilderCanvas({
     }
 
     function handleUp(e: PointerEvent) {
+      if (segmentDrag) {
+        const mid = simplifyCollinear(segmentDrag.points).slice(1, -1);
+        setCustomPaths((cp) => ({ ...cp, [segmentDrag.connectionId]: mid }));
+        setSegmentDrag(null);
+        return;
+      }
       if (marquee) {
         const rx1 = Math.min(marquee.x1, marquee.x2);
         const rx2 = Math.max(marquee.x1, marquee.x2);
@@ -379,7 +412,7 @@ export function FlowBuilderCanvas({
       window.removeEventListener("pointerup", handleUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragState, connectDrag, detachDrag, paletteDrag, marquee, isHorizontal]);
+  }, [dragState, connectDrag, detachDrag, paletteDrag, marquee, segmentDrag, isHorizontal]);
 
   async function persistMove(nodeId: string, x: number, y: number) {
     try {
@@ -436,10 +469,20 @@ export function FlowBuilderCanvas({
     }
   }
 
+  function clearCustomPath(connectionId: string) {
+    setCustomPaths((cp) => {
+      if (!(connectionId in cp)) return cp;
+      const next = { ...cp };
+      delete next[connectionId];
+      return next;
+    });
+  }
+
   async function rewireConnection(connectionId: string, targetNodeId: string) {
     const previous = connectionsRef.current.find((c) => c.id === connectionId);
     if (!previous) return;
     setConnections((cs) => cs.map((c) => (c.id === connectionId ? { ...c, targetNodeId, sideFrom: undefined, sideTo: undefined } : c)));
+    clearCustomPath(connectionId); // the manual bend was tuned for the old target — stale once it points somewhere new
     try {
       const res = await fetch(`/api/quest2/connection/${connectionId}`, {
         method: "PATCH",
@@ -465,6 +508,7 @@ export function FlowBuilderCanvas({
     const previous = connectionsRef.current.find((c) => c.id === connectionId);
     if (!previous) return;
     setConnections((cs) => cs.filter((c) => c.id !== connectionId));
+    clearCustomPath(connectionId);
     try {
       const res = await fetch(`/api/quest2/connection/${connectionId}`, { method: "DELETE" });
       if (!res.ok) {
@@ -700,10 +744,13 @@ export function FlowBuilderCanvas({
    * Obstacle-avoiding routes for every connection, recomputed only while the
    * canvas is idle (nothing being dragged) — the A* search is cheap for one
    * edge but adds up across many, so during active interaction we render
-   * with the fast `previewPath` fallback instead and only pay for the
-   * "nice" avoiding path once things settle.
+   * with the fast `previewPoints` fallback instead and only pay for the
+   * "nice" avoiding path once things settle. Connections with a manually
+   * adjusted bend (`customPaths`) are skipped — that override is what gets
+   * rendered for them instead, so there's no point computing an auto route
+   * that won't be used.
    */
-  const routedPaths = useMemo(() => {
+  const routedPoints = useMemo(() => {
     if (isBusy) return null;
     const obstacles: RouteObstacle[] = nodes.map((n) => ({
       id: n.id,
@@ -712,17 +759,32 @@ export function FlowBuilderCanvas({
       w: NODE_W + OBSTACLE_PADDING * 2,
       h: NODE_H + OBSTACLE_PADDING * 2,
     }));
-    const map = new Map<string, string>();
+    const map = new Map<string, Point[]>();
     for (const c of connections) {
+      if (customPaths[c.id]) continue;
       const from = nodes.find((n) => n.id === c.sourceNodeId);
       const to = nodes.find((n) => n.id === c.targetNodeId);
       if (!from || !to) continue;
       const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
-      map.set(c.id, routeConnection(fromPort, fromSide, toPort, toSide, obstacles, canvasSize));
+      map.set(c.id, routeConnectionPoints(fromPort, fromSide, toPort, toSide, obstacles, canvasSize));
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBusy, nodes, connections, isHorizontal]);
+  }, [isBusy, nodes, connections, isHorizontal, customPaths]);
+
+  /** The points currently displayed for a connection: a live in-progress segment drag, a saved manual bend, the auto-router's result, or (while busy) the cheap non-avoiding fallback — in that priority order. */
+  function getDisplayPoints(c: FlowConnectionVM, from: FlowNodeVM, to: FlowNodeVM): Point[] {
+    if (segmentDrag?.connectionId === c.id) return segmentDrag.points;
+    const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
+    const custom = customPaths[c.id];
+    // dediagonalize covers the case where a node connected to a saved manual bend gets dragged
+    // afterwards — the anchor moves but the stored intermediate points don't, which can otherwise
+    // leave a seam that isn't purely horizontal or vertical.
+    if (custom) return dediagonalize(simplifyCollinear([fromPort, ...custom, toPort]));
+    const pts = routedPoints?.get(c.id);
+    if (pts) return pts;
+    return previewPoints(fromPort, fromSide, toPort, toSide);
+  }
 
   /**
    * Whimsical-style side locking (horizontal mode only): once a side of a
@@ -869,6 +931,8 @@ export function FlowBuilderCanvas({
             5. Tarik titik di ujung panah (dekat node tujuan) untuk memindah atau memutus sambungan
             <br />
             6. Saat menggeser node, garis putus-putus emas muncul kalau posisinya sejajar dengan node lain
+            <br />
+            7. Hover sebuah garis lalu tarik titik emas di tengahnya untuk mengatur beloknya manual — klik dua kali garis untuk kembali ke rute otomatis
           </p>
         </div>
 
@@ -917,12 +981,14 @@ export function FlowBuilderCanvas({
                 const from = nodes.find((n) => n.id === c.sourceNodeId);
                 const to = nodes.find((n) => n.id === c.targetNodeId);
                 if (!from || !to) return null;
-                const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
-                const d = routedPaths?.get(c.id) ?? previewPath(fromPort, fromSide, toPort, toSide);
+                const { toPort, toSide } = resolveConnectionPorts(c, from, to);
+                const points = getDisplayPoints(c, from, to);
+                const d = pointsToPath(points);
                 // Pulled a bit outward from the node's own edge so this handle's hit area
                 // never overlaps the node's body (which would otherwise steal the pointerdown
                 // and start moving the node instead of grabbing the connector).
                 const handlePos = offsetPoint(toPort, toSide, 11);
+                const showSegmentHandles = hoveredConnectionId === c.id && !isBusy;
                 return (
                   <g key={c.id}>
                     <path
@@ -932,6 +998,51 @@ export function FlowBuilderCanvas({
                       fill="none"
                       markerEnd={`url(#arrowhead-${c.connectionType})`}
                     />
+                    {/* Wide invisible hit area: reveals the manual-adjust handles on hover, and double-click reverts a manual bend back to auto-routing. */}
+                    <path
+                      d={d}
+                      stroke="transparent"
+                      strokeWidth={14}
+                      fill="none"
+                      className="pointer-events-auto"
+                      onPointerEnter={() => !isBusy && setHoveredConnectionId(c.id)}
+                      onPointerLeave={() => setHoveredConnectionId((h) => (h === c.id ? null : h))}
+                      onDoubleClick={() => clearCustomPath(c.id)}
+                    >
+                      <title>{customPaths[c.id] ? "Klik dua kali untuk kembali ke rute otomatis" : "Tarik titik di tengah garis untuk mengatur beloknya manual"}</title>
+                    </path>
+                    {showSegmentHandles &&
+                      points.slice(1, -2).map((_, idx) => {
+                        const i = idx + 1;
+                        const p1 = points[i];
+                        const p2 = points[i + 1];
+                        const horizontalSeg = p1.y === p2.y;
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = (p1.y + p2.y) / 2;
+                        return (
+                          <g key={i}>
+                            <circle
+                              cx={midX}
+                              cy={midY}
+                              r={11}
+                              fill="transparent"
+                              className={`pointer-events-auto ${horizontalSeg ? "cursor-ns-resize" : "cursor-ew-resize"}`}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                setSegmentDrag({
+                                  connectionId: c.id,
+                                  points: points.map((p) => ({ ...p })),
+                                  segIndex: i,
+                                  axis: horizontalSeg ? "y" : "x",
+                                });
+                              }}
+                            >
+                              <title>Tarik untuk mengatur belokan garis ini secara manual</title>
+                            </circle>
+                            <circle cx={midX} cy={midY} r={4} fill="var(--gold)" stroke="var(--ink)" strokeWidth={1} className="pointer-events-none" />
+                          </g>
+                        );
+                      })}
                     <circle
                       cx={handlePos.x}
                       cy={handlePos.y}
@@ -956,7 +1067,7 @@ export function FlowBuilderCanvas({
               })}
               {connectDrag && (
                 <path
-                  d={previewPath({ x: connectDrag.x1, y: connectDrag.y1 }, connectDrag.fromSide, { x: connectDrag.x2, y: connectDrag.y2 }, connectDrag.toSide)}
+                  d={pointsToPath(previewPoints({ x: connectDrag.x1, y: connectDrag.y1 }, connectDrag.fromSide, { x: connectDrag.x2, y: connectDrag.y2 }, connectDrag.toSide))}
                   stroke="var(--gold)"
                   strokeWidth={2}
                   strokeDasharray="5,4"
@@ -966,7 +1077,7 @@ export function FlowBuilderCanvas({
               )}
               {detachDrag && (
                 <path
-                  d={previewPath({ x: detachDrag.x1, y: detachDrag.y1 }, detachDrag.fromSide, { x: detachDrag.x2, y: detachDrag.y2 }, detachDrag.toSide)}
+                  d={pointsToPath(previewPoints({ x: detachDrag.x1, y: detachDrag.y1 }, detachDrag.fromSide, { x: detachDrag.x2, y: detachDrag.y2 }, detachDrag.toSide))}
                   stroke={EDGE_COLOR[detachDrag.connType]}
                   strokeWidth={2}
                   strokeDasharray="5,4"

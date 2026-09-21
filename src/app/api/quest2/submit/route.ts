@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
-import { getOwnedSubmission } from "@/lib/ownership";
-import { getLatestEnrollment } from "@/lib/participant";
-import { finalizeSubmission } from "@/lib/quest2";
+import { prisma } from "@/lib/prisma";
+import { finalizeLoadedSubmission } from "@/lib/quest2";
 
 const bodySchema = z.object({
   submissionId: z.string().uuid(),
@@ -17,18 +16,27 @@ export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
-  const submission = await getOwnedSubmission(user.id, parsed.data.submissionId);
+  // Single query carries everything finalizeLoadedSubmission and the ownership
+  // check need — avoids the separate getOwnedSubmission/getLatestEnrollment
+  // round-trips (Team.sessionId already gives us what getLatestEnrollment was for).
+  const submission = await prisma.flowSubmission.findUnique({
+    where: { id: parsed.data.submissionId },
+    include: {
+      FlowNode: true,
+      FlowConnection: true,
+      Quest: true,
+      Team: { include: { TeamMember: true } },
+    },
+  });
   if (!submission) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const enrollment = await getLatestEnrollment(user.id);
-  if (!enrollment) return NextResponse.json({ error: "Not enrolled" }, { status: 400 });
+  const isMember = submission.Team.TeamMember.some((m) => m.userId === user.id);
+  if (!isMember) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { validation } = await finalizeSubmission({
-    submissionId: submission.id,
+  const { validation } = await finalizeLoadedSubmission(submission, {
     teamId: submission.teamId,
-    questId: submission.questId,
     userId: user.id,
-    sessionId: enrollment.sessionId,
+    sessionId: submission.Team.sessionId,
     timeExpired: parsed.data.timeExpired,
   });
 

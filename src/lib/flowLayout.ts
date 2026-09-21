@@ -149,7 +149,7 @@ export function pointsToPath(points: Point[]): string {
   return "M " + points.map((p) => `${p.x},${p.y}`).join(" L ");
 }
 
-function simplifyCollinear(pts: Point[]): Point[] {
+export function simplifyCollinear(pts: Point[]): Point[] {
   if (pts.length <= 2) return pts;
   const out: Point[] = [pts[0]];
   for (let i = 1; i < pts.length - 1; i++) {
@@ -160,6 +160,34 @@ function simplifyCollinear(pts: Point[]): Point[] {
     if (!collinear) out.push(b);
   }
   out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/**
+ * Ensures every consecutive pair of points differs in only one axis, inserting
+ * a corner wherever it doesn't. This is a safety net for any point sequence
+ * assembled from pieces computed independently (e.g. an exact sub-pixel stub
+ * position forced onto one end of a path whose other points were snapped to a
+ * routing grid) — those pieces are each axis-aligned on their own, but joining
+ * them can leave a seam that differs in both x and y, which renders as a
+ * short diagonal instead of a right angle.
+ */
+export function dediagonalize(points: Point[]): Point[] {
+  if (points.length === 0) return points;
+  const out: Point[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = points[i];
+    if (prev.x !== cur.x && prev.y !== cur.y) {
+      // Bend on whichever axis has the smaller gap, so the inserted corner is as subtle as possible.
+      if (Math.abs(cur.x - prev.x) < Math.abs(cur.y - prev.y)) {
+        out.push({ x: cur.x, y: prev.y });
+      } else {
+        out.push({ x: prev.x, y: cur.y });
+      }
+    }
+    out.push(cur);
+  }
   return out;
 }
 
@@ -193,13 +221,17 @@ function elbowJoin(a: Point, dirA: [number, number], b: Point, dirB: [number, nu
  * while the user is actively dragging something else on the canvas, so the
  * expensive obstacle-avoiding search only runs once things settle.
  */
-export function previewPath(fromPort: Point, fromSide: Side, toPort: Point, toSide: Side, stub = 22): string {
+export function previewPoints(fromPort: Point, fromSide: Side, toPort: Point, toSide: Side, stub = 22): Point[] {
   const [dfx, dfy] = DIR[fromSide];
   const [dtx, dty] = DIR[toSide];
   const stubA: Point = { x: fromPort.x + dfx * stub, y: fromPort.y + dfy * stub };
   const stubB: Point = { x: toPort.x + dtx * stub, y: toPort.y + dty * stub };
   const mid = elbowJoin(stubA, DIR[fromSide], stubB, DIR[toSide]);
-  return pointsToPath(simplifyCollinear([fromPort, ...mid, toPort]));
+  return simplifyCollinear([fromPort, ...mid, toPort]);
+}
+
+export function previewPath(fromPort: Point, fromSide: Side, toPort: Point, toSide: Side, stub = 22): string {
+  return pointsToPath(previewPoints(fromPort, fromSide, toPort, toSide, stub));
 }
 
 class MinHeap {
@@ -368,7 +400,7 @@ export interface RouteObstacle extends Box {
  * let that route cut straight back through the node instead of going
  * around it like any other obstacle.
  */
-export function routeConnection(
+export function routeConnectionPoints(
   fromPort: Point,
   fromSide: Side,
   toPort: Point,
@@ -376,7 +408,7 @@ export function routeConnection(
   obstacles: RouteObstacle[],
   canvasSize: { w: number; h: number },
   stub = 22
-): string {
+): Point[] {
   const [dfx, dfy] = DIR[fromSide];
   const [dtx, dty] = DIR[toSide];
   const stubA: Point = { x: fromPort.x + dfx * stub, y: fromPort.y + dfy * stub };
@@ -394,7 +426,22 @@ export function routeConnection(
   mid[0] = stubA;
   mid[mid.length - 1] = stubB;
 
-  return pointsToPath(simplifyCollinear([fromPort, ...mid, toPort]));
+  // mid[0]/mid[-1] were just force-set to exact sub-pixel stub coordinates
+  // while their neighbors are grid-snapped (A*) or already axis-aligned
+  // (elbowJoin) — dediagonalize cleans up the seam that can leave at each end.
+  return dediagonalize(simplifyCollinear([fromPort, ...mid, toPort]));
+}
+
+export function routeConnection(
+  fromPort: Point,
+  fromSide: Side,
+  toPort: Point,
+  toSide: Side,
+  obstacles: RouteObstacle[],
+  canvasSize: { w: number; h: number },
+  stub = 22
+): string {
+  return pointsToPath(routeConnectionPoints(fromPort, fromSide, toPort, toSide, obstacles, canvasSize, stub));
 }
 
 interface LayoutNode {
