@@ -28,6 +28,71 @@ export interface Point {
   y: number;
 }
 
+export interface AlignGuide {
+  type: "vertical" | "horizontal";
+  /** x for a vertical guide line, y for a horizontal one. */
+  pos: number;
+  from: number;
+  to: number;
+}
+
+const SNAP_MARGIN = 20;
+
+/**
+ * Figma/Sketch-style smart alignment: checks the moving box's left/center/right
+ * edges against every other box's left/center/right (and top/middle/bottom),
+ * and if any pair is within `threshold` px, returns the small correction that
+ * would snap them exactly flush, plus a dashed guide line spanning the two
+ * aligned boxes. Only the single closest match per axis is returned, so the
+ * box doesn't fight between two competing near-alignments.
+ */
+export function computeAlignmentSnap(moving: Box, others: Box[], threshold = 6): { dx: number; dy: number; guides: AlignGuide[] } {
+  const movingX = [moving.x, moving.x + moving.w / 2, moving.x + moving.w];
+  const movingY = [moving.y, moving.y + moving.h / 2, moving.y + moving.h];
+
+  let bestDx = 0;
+  let bestDxDelta = Infinity;
+  let bestDxMatch: { pos: number; other: Box } | null = null;
+  let bestDy = 0;
+  let bestDyDelta = Infinity;
+  let bestDyMatch: { pos: number; other: Box } | null = null;
+
+  for (const other of others) {
+    const otherX = [other.x, other.x + other.w / 2, other.x + other.w];
+    const otherY = [other.y, other.y + other.h / 2, other.y + other.h];
+    for (let i = 0; i < 3; i++) {
+      const dxCandidate = otherX[i] - movingX[i];
+      if (Math.abs(dxCandidate) <= threshold && Math.abs(dxCandidate) < bestDxDelta) {
+        bestDxDelta = Math.abs(dxCandidate);
+        bestDx = dxCandidate;
+        bestDxMatch = { pos: otherX[i], other };
+      }
+      const dyCandidate = otherY[i] - movingY[i];
+      if (Math.abs(dyCandidate) <= threshold && Math.abs(dyCandidate) < bestDyDelta) {
+        bestDyDelta = Math.abs(dyCandidate);
+        bestDy = dyCandidate;
+        bestDyMatch = { pos: otherY[i], other };
+      }
+    }
+  }
+
+  const guides: AlignGuide[] = [];
+  if (bestDxMatch) {
+    const snappedY = moving.y + bestDy;
+    const top = Math.min(snappedY, bestDxMatch.other.y);
+    const bottom = Math.max(snappedY + moving.h, bestDxMatch.other.y + bestDxMatch.other.h);
+    guides.push({ type: "vertical", pos: bestDxMatch.pos, from: top - SNAP_MARGIN, to: bottom + SNAP_MARGIN });
+  }
+  if (bestDyMatch) {
+    const snappedX = moving.x + bestDx;
+    const left = Math.min(snappedX, bestDyMatch.other.x);
+    const right = Math.max(snappedX + moving.w, bestDyMatch.other.x + bestDyMatch.other.w);
+    guides.push({ type: "horizontal", pos: bestDyMatch.pos, from: left - SNAP_MARGIN, to: right + SNAP_MARGIN });
+  }
+
+  return { dx: bestDxMatch ? bestDx : 0, dy: bestDyMatch ? bestDy : 0, guides };
+}
+
 export function sidePoint(box: Box, side: Side): Point {
   switch (side) {
     case "top":
