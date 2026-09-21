@@ -153,6 +153,7 @@ export function FlowBuilderCanvas({
   const [guides, setGuides] = useState<AlignGuide[]>([]);
   const [checkMsg, setCheckMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [viewMode, setViewMode] = useState<FlowViewMode>(initialViewMode);
   const [savingView, setSavingView] = useState(false);
@@ -629,6 +630,15 @@ export function FlowBuilderCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, locked]);
 
+  useEffect(() => {
+    if (!showHelp) return;
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowHelp(false);
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [showHelp]);
+
   function runCheck() {
     const result = validate(
       nodes.map((n) => ({ id: n.id, label: n.label })),
@@ -935,30 +945,6 @@ export function FlowBuilderCanvas({
               </div>
             </div>
           ))}
-          <div className="mt-5 mb-3 text-[11px] font-semibold uppercase tracking-[1px] text-muted2">
-            Cara Main
-          </div>
-          <p className="text-[12px] leading-[1.6] text-muted2">
-            1. Seret node dari sini ke kanvas
-            <br />
-            {isHorizontal ? (
-              <>2. Hover node lalu tarik garis dari titik di sisi atas/bawah/kiri/kanan ke node tujuan</>
-            ) : (
-              <>2. Tarik garis dari titik di bawah node ke node tujuan</>
-            )}
-            <br />
-            3. Node Decision punya 2 titik keluaran: Ya (hijau) &amp; Tidak (merah)
-            <br />
-            4. Seret area kosong untuk pilih beberapa node sekaligus (tahan Shift untuk menambah), lalu geser bersamaan
-            <br />
-            5. Tarik titik di ujung panah (dekat node tujuan) untuk memindah atau memutus sambungan
-            <br />
-            6. Saat menggeser node, garis putus-putus emas muncul kalau posisinya sejajar dengan node lain
-            <br />
-            7. Klik sebuah garis untuk memunculkan kapsul emas di tiap segmennya — tarik salah satu untuk mengatur beloknya manual, klik dua kali garis untuk kembali ke rute otomatis
-            <br />
-            8. Tekan Delete/Backspace untuk menghapus node yang sedang terpilih (bisa beberapa sekaligus)
-          </p>
         </div>
 
         <div className="relative flex-1 overflow-auto">
@@ -1349,6 +1335,66 @@ export function FlowBuilderCanvas({
             {paletteDrag.def.icon}
           </div>
           <span className="text-[13px] font-semibold">{paletteDrag.def.label}</span>
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowHelp(true)}
+        className="fixed right-6 bottom-6 z-[150] flex items-center gap-2 rounded-full border border-teal bg-surface px-4 py-3 text-[13px] font-semibold text-teal shadow-[0_8px_20px_rgba(0,0,0,0.4)] transition-colors hover:bg-teal hover:text-[#0A2723]"
+      >
+        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-current text-[12px]">
+          ?
+        </span>
+        Cara Main
+      </button>
+
+      {showHelp && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setShowHelp(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") setShowHelp(false);
+          }}
+          className="fixed inset-0 z-[250] flex cursor-default items-end justify-end bg-[rgba(10,9,16,0.6)] p-6 backdrop-blur-sm sm:items-center sm:justify-center"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[80vh] w-full max-w-[420px] overflow-y-auto rounded-[14px] border border-border bg-surface p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+          >
+            <div className="mb-3.5 flex items-center justify-between">
+              <div className="text-[15px] font-semibold">Cara Main</div>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted2 hover:bg-surface2 hover:text-text"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-[12.5px] leading-[1.7] text-muted2">
+              1. Seret node dari sini ke kanvas
+              <br />
+              {isHorizontal ? (
+                <>2. Hover node lalu tarik garis dari titik di sisi atas/bawah/kiri/kanan ke node tujuan</>
+              ) : (
+                <>2. Tarik garis dari titik di bawah node ke node tujuan</>
+              )}
+              <br />
+              3. Node Decision punya 2 titik keluaran: Ya (hijau) &amp; Tidak (merah)
+              <br />
+              4. Seret area kosong untuk pilih beberapa node sekaligus (tahan Shift untuk menambah), lalu geser bersamaan
+              <br />
+              5. Tarik titik di ujung panah (dekat node tujuan) untuk memindah atau memutus sambungan
+              <br />
+              6. Saat menggeser node, garis putus-putus emas muncul kalau posisinya sejajar dengan node lain
+              <br />
+              7. Klik sebuah garis untuk memunculkan kapsul emas di tiap segmennya — tarik salah satu untuk mengatur beloknya manual, klik dua kali garis untuk kembali ke rute otomatis
+              <br />
+              8. Tekan Delete/Backspace untuk menghapus node yang sedang terpilih (bisa beberapa sekaligus)
+            </p>
+          </div>
         </div>
       )}
     </div>

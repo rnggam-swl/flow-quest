@@ -308,6 +308,10 @@ model Team {
   name                String
   resourcePoints      Int                   @default(0)
   createdAt           DateTime              @default(now())
+  // Set only for this app's solo-play teams (see ensureSoloTeam) — the (sessionId, soloOwnerId)
+  // unique constraint is what makes "get or create this user's solo team" a safe atomic upsert
+  // instead of a racy check-then-create.
+  soloOwnerId         String?               @db.Uuid
   ActivityLog         ActivityLog[]
   ChatMessage         ChatMessage[]
   FlowSubmission      FlowSubmission[]
@@ -318,6 +322,7 @@ model Team {
   TeamDecision        TeamDecision[]
   TeamMember          TeamMember[]
 
+  @@unique([sessionId, soloOwnerId])
   @@index([sessionId])
 }
 
