@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { randomBytes, createHash } from "crypto";
 import bcrypt from "bcryptjs";
@@ -66,7 +67,12 @@ export type CurrentUser = Pick<
   "id" | "email" | "displayName" | "appRole" | "avatarUrl" | "school" | "groupName" | "flowViewMode"
 >;
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/**
+ * Wrapped in React's `cache()` so a layout and its page (which both commonly
+ * need the current user) share one DB round-trip per request instead of
+ * each re-querying AuthSession independently.
+ */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -100,7 +106,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     groupName: user.groupName,
     flowViewMode: user.flowViewMode,
   };
-}
+});
 
 /** Redirects to /login if not authenticated, or to the other portal if the role doesn't match. */
 export async function requireRole(role: AppRole): Promise<CurrentUser> {

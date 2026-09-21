@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -7,8 +8,12 @@ import { prisma } from "@/lib/prisma";
  * "team of one" so we can reuse FlowSubmission/Score/Reflection/etc. as-is
  * without any schema changes. The Role assigned is arbitrary — role-specific
  * mechanics aren't part of this solo product.
+ *
+ * Cached per request — the participant layout and every page under it call
+ * this independently, and it's idempotent, so sharing one lookup (or one
+ * create, the first time) per request avoids redundant round-trips.
  */
-export async function ensureSoloTeam(sessionId: string, userId: string, displayName: string) {
+export const ensureSoloTeam = cache(async (sessionId: string, userId: string, displayName: string) => {
   const existing = await prisma.teamMember.findFirst({
     where: { userId, Team: { sessionId } },
     select: { teamId: true },
@@ -36,4 +41,4 @@ export async function ensureSoloTeam(sessionId: string, userId: string, displayN
   });
 
   return teamId;
-}
+});

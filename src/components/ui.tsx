@@ -107,6 +107,25 @@ export function HintCode({ children }: { children: ReactNode }) {
   );
 }
 
+/** Small spinner shown by loading.tsx route boundaries so page transitions give instant feedback instead of a frozen screen while the server renders. */
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <div
+      role="status"
+      aria-label="Memuat…"
+      className={cx("h-6 w-6 animate-spin rounded-full border-2 border-border-light border-t-teal", className)}
+    />
+  );
+}
+
+export function PageLoading() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <Spinner />
+    </div>
+  );
+}
+
 export function StatusPill({ tone, children }: { tone: "completed" | "progress"; children: ReactNode }) {
   const tones = {
     completed: "bg-[rgba(123,201,126,0.15)] text-success",

@@ -716,6 +716,32 @@ export function FlowBuilderCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBusy, nodes, connections, isHorizontal]);
 
+  /**
+   * Whimsical-style side locking (horizontal mode only): once a side of a
+   * node is already the destination of an incoming line, that same side can
+   * no longer be dragged out as a NEW connection's starting point — it can
+   * still receive more incoming lines from other nodes, on that side or any
+   * other. This also removes the visual/interaction clash that made the
+   * detach handle hard to grab: the side's own "start a line" dot no longer
+   * competes with the existing connection's arrowhead handle sitting right
+   * there.
+   */
+  const lockedInputSides = useMemo(() => {
+    const map = new Map<string, Set<Side>>();
+    if (!isHorizontal) return map;
+    for (const c of connections) {
+      if (detachDrag?.connectionId === c.id) continue;
+      const from = nodes.find((n) => n.id === c.sourceNodeId);
+      const to = nodes.find((n) => n.id === c.targetNodeId);
+      if (!from || !to) continue;
+      const { toSide } = resolveConnectionPorts(c, from, to);
+      if (!map.has(to.id)) map.set(to.id, new Set());
+      map.get(to.id)!.add(toSide);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHorizontal, connections, nodes, detachDrag]);
+
   const minutes = Math.floor(secondsLeft / 60);
   const secs = secondsLeft % 60;
   const timeLow = secondsLeft <= 30;
@@ -1063,29 +1089,34 @@ export function FlowBuilderCanvas({
                     </>
                   )
                 ) : isHorizontal ? (
-                  SIDES.map((side) => (
-                    <div
-                      key={side}
-                      data-role={`handle-${side}`}
-                      title={
-                        node.nodeType === "ERROR"
-                          ? "Tarik untuk jalur pemulihan (recovery)"
-                          : "Tarik untuk menyambungkan ke node lain"
-                      }
-                      className={`absolute z-[6] h-[15px] w-[15px] touch-none cursor-crosshair rounded-full border-[3px] border-ink opacity-0 transition-all after:absolute after:-inset-3 after:content-[''] group-hover:opacity-100 hover:scale-125 ${
-                        node.nodeType === "ERROR" ? "bg-gold" : "bg-teal"
-                      } ${
-                        side === "top"
-                          ? "top-[-8px] left-1/2 -translate-x-1/2"
-                          : side === "bottom"
-                          ? "bottom-[-8px] left-1/2 -translate-x-1/2"
-                          : side === "left"
-                          ? "left-[-8px] top-1/2 -translate-y-1/2"
-                          : "right-[-8px] top-1/2 -translate-y-1/2"
-                      }`}
-                      onPointerDown={(e) => startConnectDrag(node, e, { side })}
-                    />
-                  ))
+                  SIDES.map((side) => {
+                    const locked = lockedInputSides.get(node.id)?.has(side) ?? false;
+                    return (
+                      <div
+                        key={side}
+                        data-role={`handle-${side}`}
+                        title={
+                          locked
+                            ? "Sisi ini sudah jadi tujuan sambungan lain — tidak bisa dipakai untuk memulai sambungan baru"
+                            : node.nodeType === "ERROR"
+                            ? "Tarik untuk jalur pemulihan (recovery)"
+                            : "Tarik untuk menyambungkan ke node lain"
+                        }
+                        className={`absolute z-[6] h-[15px] w-[15px] touch-none rounded-full border-[3px] border-ink opacity-0 transition-all after:absolute after:-inset-3 after:content-[''] group-hover:opacity-100 ${
+                          locked ? "cursor-not-allowed bg-muted2" : `cursor-crosshair hover:scale-125 ${node.nodeType === "ERROR" ? "bg-gold" : "bg-teal"}`
+                        } ${
+                          side === "top"
+                            ? "top-[-8px] left-1/2 -translate-x-1/2"
+                            : side === "bottom"
+                            ? "bottom-[-8px] left-1/2 -translate-x-1/2"
+                            : side === "left"
+                            ? "left-[-8px] top-1/2 -translate-y-1/2"
+                            : "right-[-8px] top-1/2 -translate-y-1/2"
+                        }`}
+                        onPointerDown={locked ? undefined : (e) => startConnectDrag(node, e, { side })}
+                      />
+                    );
+                  })
                 ) : (
                   <div
                     data-role="handle-out"

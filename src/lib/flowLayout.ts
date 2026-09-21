@@ -40,11 +40,14 @@ const SNAP_MARGIN = 20;
 
 /**
  * Figma/Sketch-style smart alignment: checks the moving box's left/center/right
- * edges against every other box's left/center/right (and top/middle/bottom),
- * and if any pair is within `threshold` px, returns the small correction that
- * would snap them exactly flush, plus a dashed guide line spanning the two
- * aligned boxes. Only the single closest match per axis is returned, so the
- * box doesn't fight between two competing near-alignments.
+ * edges against every other box's left/center/right (and top/middle/bottom).
+ * The single closest match per axis decides how much to actually snap by (so
+ * the box doesn't fight between two competing near-alignments), but every
+ * edge/center pairing that ends up flush *after* that snap gets its own
+ * guide line — since nodes here are all the same size, aligning by one edge
+ * commonly also aligns the opposite edge and the center simultaneously, and
+ * all of those should show up (matching typical diagram-builder guides),
+ * not just whichever one happened to be checked first.
  */
 export function computeAlignmentSnap(moving: Box, others: Box[], threshold = 6): { dx: number; dy: number; guides: AlignGuide[] } {
   const movingX = [moving.x, moving.x + moving.w / 2, moving.x + moving.w];
@@ -52,10 +55,8 @@ export function computeAlignmentSnap(moving: Box, others: Box[], threshold = 6):
 
   let bestDx = 0;
   let bestDxDelta = Infinity;
-  let bestDxMatch: { pos: number; other: Box } | null = null;
   let bestDy = 0;
   let bestDyDelta = Infinity;
-  let bestDyMatch: { pos: number; other: Box } | null = null;
 
   for (const other of others) {
     const otherX = [other.x, other.x + other.w / 2, other.x + other.w];
@@ -65,32 +66,47 @@ export function computeAlignmentSnap(moving: Box, others: Box[], threshold = 6):
       if (Math.abs(dxCandidate) <= threshold && Math.abs(dxCandidate) < bestDxDelta) {
         bestDxDelta = Math.abs(dxCandidate);
         bestDx = dxCandidate;
-        bestDxMatch = { pos: otherX[i], other };
       }
       const dyCandidate = otherY[i] - movingY[i];
       if (Math.abs(dyCandidate) <= threshold && Math.abs(dyCandidate) < bestDyDelta) {
         bestDyDelta = Math.abs(dyCandidate);
         bestDy = dyCandidate;
-        bestDyMatch = { pos: otherY[i], other };
       }
     }
   }
 
+  const snappedX = [moving.x + bestDx, moving.x + bestDx + moving.w / 2, moving.x + bestDx + moving.w];
+  const snappedY = [moving.y + bestDy, moving.y + bestDy + moving.h / 2, moving.y + bestDy + moving.h];
+
   const guides: AlignGuide[] = [];
-  if (bestDxMatch) {
-    const snappedY = moving.y + bestDy;
-    const top = Math.min(snappedY, bestDxMatch.other.y);
-    const bottom = Math.max(snappedY + moving.h, bestDxMatch.other.y + bestDxMatch.other.h);
-    guides.push({ type: "vertical", pos: bestDxMatch.pos, from: top - SNAP_MARGIN, to: bottom + SNAP_MARGIN });
+  if (bestDxDelta !== Infinity) {
+    const seen = new Set<number>();
+    for (const other of others) {
+      const otherX = [other.x, other.x + other.w / 2, other.x + other.w];
+      for (let i = 0; i < 3; i++) {
+        if (Math.abs(otherX[i] - snappedX[i]) > 0.5 || seen.has(otherX[i])) continue;
+        seen.add(otherX[i]);
+        const top = Math.min(moving.y + bestDy, other.y);
+        const bottom = Math.max(moving.y + bestDy + moving.h, other.y + other.h);
+        guides.push({ type: "vertical", pos: otherX[i], from: top - SNAP_MARGIN, to: bottom + SNAP_MARGIN });
+      }
+    }
   }
-  if (bestDyMatch) {
-    const snappedX = moving.x + bestDx;
-    const left = Math.min(snappedX, bestDyMatch.other.x);
-    const right = Math.max(snappedX + moving.w, bestDyMatch.other.x + bestDyMatch.other.w);
-    guides.push({ type: "horizontal", pos: bestDyMatch.pos, from: left - SNAP_MARGIN, to: right + SNAP_MARGIN });
+  if (bestDyDelta !== Infinity) {
+    const seen = new Set<number>();
+    for (const other of others) {
+      const otherY = [other.y, other.y + other.h / 2, other.y + other.h];
+      for (let i = 0; i < 3; i++) {
+        if (Math.abs(otherY[i] - snappedY[i]) > 0.5 || seen.has(otherY[i])) continue;
+        seen.add(otherY[i]);
+        const left = Math.min(moving.x + bestDx, other.x);
+        const right = Math.max(moving.x + bestDx + moving.w, other.x + other.w);
+        guides.push({ type: "horizontal", pos: otherY[i], from: left - SNAP_MARGIN, to: right + SNAP_MARGIN });
+      }
+    }
   }
 
-  return { dx: bestDxMatch ? bestDx : 0, dy: bestDyMatch ? bestDy : 0, guides };
+  return { dx: bestDxDelta !== Infinity ? bestDx : 0, dy: bestDyDelta !== Infinity ? bestDy : 0, guides };
 }
 
 /** Shifts a point outward from a box's edge along that side's outward-facing normal, by `distance` px. */
