@@ -21,6 +21,7 @@ model ActivityLog {
 
   @@index([teamId, createdAt])
   @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
 }
 
 model AuthSession {

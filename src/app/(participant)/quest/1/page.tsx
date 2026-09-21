@@ -17,18 +17,23 @@ export default async function Quest1Page() {
   const quest1 = items.find((i) => i.order === 1);
   if (!quest1 || quest1.state === "locked") redirect("/brief");
 
+  // Best-effort, fire-and-forget — the page shouldn't wait on this read+write round-trip just to
+  // dedupe a log row. Duplicate QUEST_STARTED rows from repeated visits are harmless: every reader
+  // (see getSessionFullReport) takes the earliest one when computing time spent.
   if (quest1.state === "available") {
-    const alreadyStarted = await prisma.activityLog.findFirst({
-      where: { userId: user.id, sessionId: enrollment.sessionId, event: "QUEST_STARTED", metadata: { path: ["order"], equals: 1 } },
-    });
-    if (!alreadyStarted) {
-      void logActivity({
-        event: "QUEST_STARTED",
-        userId: user.id,
-        sessionId: enrollment.sessionId,
-        metadata: { order: 1, questId: quest1.questId },
+    void (async () => {
+      const alreadyStarted = await prisma.activityLog.findFirst({
+        where: { userId: user.id, sessionId: enrollment.sessionId, event: "QUEST_STARTED", metadata: { path: ["order"], equals: 1 } },
       });
-    }
+      if (!alreadyStarted) {
+        void logActivity({
+          event: "QUEST_STARTED",
+          userId: user.id,
+          sessionId: enrollment.sessionId,
+          metadata: { order: 1, questId: quest1.questId },
+        });
+      }
+    })();
   }
 
   return <Quest1Client alreadyCompleted={quest1.state === "completed"} />;

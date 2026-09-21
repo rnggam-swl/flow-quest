@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManagedSession } from "@/lib/managedSession";
-import { getSessionFullReport } from "@/lib/adminReport";
+import { getParticipantReport } from "@/lib/adminReport";
 import { Eyebrow, Headline } from "@/components/ui";
 
 function fmtSeconds(sec: number | null) {
@@ -25,7 +25,7 @@ export default async function ParticipantReportPage({
   const session = await getManagedSession();
   if (!session) notFound();
 
-  const report = (await getSessionFullReport(session.id)).find((r) => r.sessionParticipantId === sessionParticipantId);
+  const report = await getParticipantReport(session.id, sessionParticipantId);
   if (!report) notFound();
 
   return (

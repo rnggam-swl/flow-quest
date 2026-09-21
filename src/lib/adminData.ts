@@ -16,32 +16,43 @@ export interface AdminParticipantRow {
   totalScore: number | null;
 }
 
+/** Picks each team's most-recently-submitted FlowSubmission (submittedAt desc, DRAFT/null last) — matches the single-team `orderBy` this replaces, just computed in JS after one bulk fetch instead of one query per team. */
+function pickLatestSubmission<T extends { submittedAt: Date | null }>(list: T[]): T | undefined {
+  return [...list].sort((a, b) => {
+    if (a.submittedAt && b.submittedAt) return b.submittedAt.getTime() - a.submittedAt.getTime();
+    if (a.submittedAt) return -1;
+    if (b.submittedAt) return 1;
+    return 0;
+  })[0];
+}
+
 export async function getAdminOverview(sessionId: string) {
-  const participants = await prisma.sessionParticipant.findMany({
-    where: { sessionId },
-    include: { User: true },
-    orderBy: { createdAt: "asc" },
+  // Teams' FlowSubmissions are pulled via nested `include` (one DB round trip covering both)
+  // rather than a separate query keyed off the team ids — worth doing on top of the pooler
+  // this app's Supabase project runs behind, where each extra round trip costs real latency.
+  const [participants, teams] = await Promise.all([
+    prisma.sessionParticipant.findMany({
+      where: { sessionId },
+      include: { User: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.team.findMany({
+      where: { sessionId },
+      include: { TeamMember: true, FlowSubmission: { include: { Score: true } } },
+    }),
+  ]);
+
+  const teamIdByUserId = new Map<string, string>();
+  const submissionsByTeam = new Map<string, (typeof teams)[number]["FlowSubmission"]>();
+  teams.forEach((t) => {
+    t.TeamMember.forEach((m) => teamIdByUserId.set(m.userId, t.id));
+    submissionsByTeam.set(t.id, t.FlowSubmission);
   });
 
-  const rows: AdminParticipantRow[] = [];
-  for (const p of participants) {
-    const team = await prisma.team.findFirst({
-      where: { sessionId, TeamMember: { some: { userId: p.participantId } } },
-    });
-    let submissionId: string | null = null;
-    let totalScore: number | null = null;
-    if (team) {
-      const submission = await prisma.flowSubmission.findFirst({
-        where: { teamId: team.id },
-        include: { Score: true },
-        orderBy: { submittedAt: { sort: "desc", nulls: "last" } },
-      });
-      if (submission) {
-        submissionId = submission.id;
-        totalScore = submission.Score?.totalScore ?? null;
-      }
-    }
-    rows.push({
+  const rows: AdminParticipantRow[] = participants.map((p) => {
+    const teamId = teamIdByUserId.get(p.participantId);
+    const latest = teamId ? pickLatestSubmission(submissionsByTeam.get(teamId) ?? []) : undefined;
+    return {
       sessionParticipantId: p.id,
       userId: p.participantId,
       displayName: p.User.displayName,
@@ -52,10 +63,10 @@ export async function getAdminOverview(sessionId: string) {
       totalXp: p.totalXp,
       startedAt: p.startedAt,
       completedAt: p.completedAt,
-      submissionId,
-      totalScore,
-    });
-  }
+      submissionId: latest?.id ?? null,
+      totalScore: latest?.Score?.totalScore ?? null,
+    };
+  });
 
   const completed = rows.filter((r) => r.status === "COMPLETED" || r.status === "TIME_EXPIRED");
   const inProgress = rows.filter((r) => r.status === "IN_PROGRESS");
