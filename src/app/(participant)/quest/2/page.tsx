@@ -1,6 +1,13 @@
+import dynamic from "next/dynamic";
 import { loadFlowQuestPageData } from "@/lib/quest2";
 import { NODE_LIBRARY, getRubricMax } from "@/lib/flowScoring";
-import { FlowBuilderCanvas } from "@/components/FlowBuilderCanvas";
+import { PageLoading } from "@/components/ui";
+
+// The canvas is the heaviest client bundle on this route (routing/alignment math, drag handling) —
+// splitting it into its own chunk lets the page shell stream in first instead of waiting on it.
+const FlowBuilderCanvas = dynamic(() => import("@/components/FlowBuilderCanvas").then((m) => m.FlowBuilderCanvas), {
+  loading: () => <PageLoading />,
+});
 
 const RUBRIC = getRubricMax(2);
 const BASE_MAX = RUBRIC.goal + RUBRIC.flow + RUBRIC.logic + RUBRIC.constraint + RUBRIC.edgeCase + RUBRIC.simplicity;

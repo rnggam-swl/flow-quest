@@ -1,6 +1,11 @@
+import dynamic from "next/dynamic";
 import { loadFlowQuestPageData } from "@/lib/quest2";
 import { QUEST5_NODE_LIBRARY, getRubricMax } from "@/lib/flowScoring";
-import { FlowBuilderCanvas } from "@/components/FlowBuilderCanvas";
+import { PageLoading } from "@/components/ui";
+
+const FlowBuilderCanvas = dynamic(() => import("@/components/FlowBuilderCanvas").then((m) => m.FlowBuilderCanvas), {
+  loading: () => <PageLoading />,
+});
 
 const RUBRIC = getRubricMax(5);
 const BASE_MAX = RUBRIC.goal + RUBRIC.flow + RUBRIC.logic + RUBRIC.constraint + RUBRIC.edgeCase + RUBRIC.simplicity;
