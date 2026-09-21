@@ -93,6 +93,12 @@ export function computeAlignmentSnap(moving: Box, others: Box[], threshold = 6):
   return { dx: bestDxMatch ? bestDx : 0, dy: bestDyMatch ? bestDy : 0, guides };
 }
 
+/** Shifts a point outward from a box's edge along that side's outward-facing normal, by `distance` px. */
+export function offsetPoint(p: Point, side: Side, distance: number): Point {
+  const [dx, dy] = DIR[side];
+  return { x: p.x + dx * distance, y: p.y + dy * distance };
+}
+
 export function sidePoint(box: Box, side: Side): Point {
   switch (side) {
     case "top":

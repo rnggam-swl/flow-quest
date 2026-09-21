@@ -30,15 +30,16 @@ export interface QuestListItem {
  * off their FlowSubmission row, unlocked sequentially.
  */
 export async function getQuestList(sessionId: string, teamId: string, userId: string) {
-  const sessionQuests = await prisma.sessionQuest.findMany({
-    where: { sessionId },
-    orderBy: { order: "asc" },
-    include: { Quest: true },
-  });
-
-  const quest1CompletedLog = await prisma.activityLog.findFirst({
-    where: { userId, sessionId, event: "QUEST_COMPLETED", metadata: { path: ["order"], equals: 1 } },
-  });
+  const [sessionQuests, quest1CompletedLog] = await Promise.all([
+    prisma.sessionQuest.findMany({
+      where: { sessionId },
+      orderBy: { order: "asc" },
+      include: { Quest: true },
+    }),
+    prisma.activityLog.findFirst({
+      where: { userId, sessionId, event: "QUEST_COMPLETED", metadata: { path: ["order"], equals: 1 } },
+    }),
+  ]);
 
   const flowSubmissions = await prisma.flowSubmission.findMany({
     where: { teamId, questId: { in: sessionQuests.filter((sq) => sq.order >= 2).map((sq) => sq.questId) } },

@@ -6,6 +6,10 @@ import { getOwnedSubmission } from "@/lib/ownership";
 import { logActivity } from "@/lib/activity";
 
 const bodySchema = z.object({
+  // Optional client-generated id lets the canvas add the node to local state
+  // optimistically (before the round-trip resolves) with a stable id, instead
+  // of waiting for the server's id and having to swap it in afterwards.
+  id: z.string().uuid().optional(),
   submissionId: z.string().uuid(),
   label: z.string().min(1).max(60),
   nodeType: z.enum(["START", "ACTION", "SCREEN", "SYSTEM", "DECISION", "OUTCOME", "ERROR"]),
@@ -27,7 +31,7 @@ export async function POST(request: Request) {
 
   const node = await prisma.flowNode.create({
     data: {
-      id: crypto.randomUUID(),
+      id: parsed.data.id ?? crypto.randomUUID(),
       submissionId: submission.id,
       nodeType: parsed.data.nodeType,
       label: parsed.data.label,

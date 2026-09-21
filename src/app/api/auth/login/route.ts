@@ -47,7 +47,7 @@ export async function POST(request: Request) {
         deadlineAt,
       },
     });
-    await logActivity({
+    void logActivity({
       event: "SESSION_JOINED",
       userId: user.id,
       sessionId: latestEnrollment.sessionId,

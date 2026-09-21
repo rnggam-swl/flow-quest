@@ -6,6 +6,8 @@ import { getOwnedSubmission } from "@/lib/ownership";
 import { logActivity } from "@/lib/activity";
 
 const bodySchema = z.object({
+  // See the node route for why this is accepted from the client (optimistic UI).
+  id: z.string().uuid().optional(),
   submissionId: z.string().uuid(),
   sourceNodeId: z.string().uuid(),
   targetNodeId: z.string().uuid(),
@@ -18,7 +20,7 @@ export async function POST(request: Request) {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  const { submissionId, sourceNodeId, targetNodeId, connectionType } = parsed.data;
+  const { id, submissionId, sourceNodeId, targetNodeId, connectionType } = parsed.data;
 
   if (sourceNodeId === targetNodeId) {
     return NextResponse.json({ error: "Cannot connect a node to itself" }, { status: 400 });
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
 
   const connection = await prisma.flowConnection.create({
     data: {
-      id: crypto.randomUUID(),
+      id: id ?? crypto.randomUUID(),
       submissionId,
       sourceNodeId,
       targetNodeId,

@@ -8,6 +8,7 @@ import {
   autoLayout,
   computeAlignmentSnap,
   nearestSide,
+  offsetPoint,
   previewPath,
   routeConnection,
   sidePoint,
@@ -393,6 +394,14 @@ export function FlowBuilderCanvas({
     }
   }
 
+  /**
+   * Adds the connection to local state immediately (client-generated id) so
+   * drawing a line feels instant, then confirms with the server in the
+   * background — rolling the optimistic entry back out if the request
+   * ultimately fails. Reconciles onto the server's id afterwards (normally
+   * the same one we sent, but the server may return a pre-existing
+   * duplicate's id instead).
+   */
   async function createConnection(
     sourceNodeId: string,
     targetNodeId: string,
@@ -401,27 +410,36 @@ export function FlowBuilderCanvas({
   ) {
     if (connectionsRef.current.some((c) => c.sourceNodeId === sourceNodeId && c.targetNodeId === targetNodeId && c.connectionType === connectionType))
       return;
+    const tempId = crypto.randomUUID();
+    setConnections((cs) => [
+      ...cs,
+      { id: tempId, sourceNodeId, targetNodeId, connectionType, sideFrom: sides?.sideFrom, sideTo: sides?.sideTo },
+    ]);
     try {
       const res = await fetch("/api/quest2/connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId, sourceNodeId, targetNodeId, connectionType }),
+        body: JSON.stringify({ id: tempId, submissionId, sourceNodeId, targetNodeId, connectionType }),
       });
       if (!res.ok) {
+        setConnections((cs) => cs.filter((c) => c.id !== tempId));
         flashError("Gagal menyambungkan node — coba lagi.");
         return;
       }
       const { connection } = await res.json();
-      setConnections((cs) => [
-        ...cs,
-        { id: connection.id, sourceNodeId, targetNodeId, connectionType, sideFrom: sides?.sideFrom, sideTo: sides?.sideTo },
-      ]);
+      if (connection.id !== tempId) {
+        setConnections((cs) => cs.map((c) => (c.id === tempId ? { ...c, id: connection.id } : c)));
+      }
     } catch {
+      setConnections((cs) => cs.filter((c) => c.id !== tempId));
       flashError("Gagal menyambungkan node — periksa koneksi internet kamu.");
     }
   }
 
   async function rewireConnection(connectionId: string, targetNodeId: string) {
+    const previous = connectionsRef.current.find((c) => c.id === connectionId);
+    if (!previous) return;
+    setConnections((cs) => cs.map((c) => (c.id === connectionId ? { ...c, targetNodeId, sideFrom: undefined, sideTo: undefined } : c)));
     try {
       const res = await fetch(`/api/quest2/connection/${connectionId}`, {
         method: "PATCH",
@@ -429,51 +447,62 @@ export function FlowBuilderCanvas({
         body: JSON.stringify({ targetNodeId }),
       });
       if (!res.ok) {
+        setConnections((cs) => cs.map((c) => (c.id === connectionId ? previous : c)));
         flashError("Gagal memindahkan sambungan — coba lagi.");
         return;
       }
       const data = await res.json();
       if (data.deleted) {
         setConnections((cs) => cs.filter((c) => c.id !== connectionId));
-        return;
       }
-      setConnections((cs) => cs.map((c) => (c.id === connectionId ? { ...c, targetNodeId, sideFrom: undefined, sideTo: undefined } : c)));
     } catch {
+      setConnections((cs) => cs.map((c) => (c.id === connectionId ? previous : c)));
       flashError("Gagal memindahkan sambungan — periksa koneksi internet kamu.");
     }
   }
 
   async function deleteConnection(connectionId: string) {
+    const previous = connectionsRef.current.find((c) => c.id === connectionId);
+    if (!previous) return;
+    setConnections((cs) => cs.filter((c) => c.id !== connectionId));
     try {
       const res = await fetch(`/api/quest2/connection/${connectionId}`, { method: "DELETE" });
       if (!res.ok) {
+        setConnections((cs) => [...cs, previous]);
         flashError("Gagal memutus sambungan — coba lagi.");
-        return;
       }
-      setConnections((cs) => cs.filter((c) => c.id !== connectionId));
     } catch {
+      setConnections((cs) => [...cs, previous]);
       flashError("Gagal memutus sambungan — periksa koneksi internet kamu.");
     }
   }
 
+  /**
+   * Adds the node to local state immediately (client-generated id) instead of
+   * waiting for the round-trip, so dropping a node from the palette feels
+   * instant — the palette-drop's own drag interaction already has to feel
+   * responsive, and waiting on the network here was the main source of the
+   * "heavy" lag. Rolled back if the request ultimately fails.
+   */
   async function createNodeAt(def: NodeLibItem, x: number, y: number) {
     if (locked) return;
+    const id = crypto.randomUUID();
+    setNodes((ns) => [
+      ...ns,
+      { id, kind: def.kind, label: def.label, icon: def.icon, nodeType: def.nodeType, decision: Boolean(def.decision), x, y },
+    ]);
     try {
       const res = await fetch("/api/quest2/node", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId, label: def.label, nodeType: def.nodeType, positionX: x, positionY: y }),
+        body: JSON.stringify({ id, submissionId, label: def.label, nodeType: def.nodeType, positionX: x, positionY: y }),
       });
       if (!res.ok) {
+        setNodes((ns) => ns.filter((n) => n.id !== id));
         flashError("Gagal menambah node — waktu mungkin sudah habis.");
-        return;
       }
-      const { node } = await res.json();
-      setNodes((ns) => [
-        ...ns,
-        { id: node.id, kind: def.kind, label: def.label, icon: def.icon, nodeType: def.nodeType, decision: Boolean(def.decision), x, y },
-      ]);
     } catch {
+      setNodes((ns) => ns.filter((n) => n.id !== id));
       flashError("Gagal menambah node — periksa koneksi internet kamu.");
     }
   }
@@ -504,21 +533,32 @@ export function FlowBuilderCanvas({
 
   async function deleteNode(id: string) {
     if (locked) return;
+    const removedNode = nodesRef.current.find((n) => n.id === id);
+    if (!removedNode) return;
+    const removedConnections = connectionsRef.current.filter((c) => c.sourceNodeId === id || c.targetNodeId === id);
+
+    setNodes((ns) => ns.filter((n) => n.id !== id));
+    setConnections((cs) => cs.filter((c) => c.sourceNodeId !== id && c.targetNodeId !== id));
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+    function rollback() {
+      setNodes((ns) => [...ns, removedNode!]);
+      setConnections((cs) => [...cs, ...removedConnections]);
+    }
+
     try {
       const res = await fetch(`/api/quest2/node/${id}`, { method: "DELETE" });
       if (!res.ok) {
+        rollback();
         flashError("Gagal menghapus node — waktu mungkin sudah habis.");
-        return;
       }
-      setNodes((ns) => ns.filter((n) => n.id !== id));
-      setConnections((cs) => cs.filter((c) => c.sourceNodeId !== id && c.targetNodeId !== id));
-      setSelectedIds((prev) => {
-        if (!prev.has(id)) return prev;
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
     } catch {
+      rollback();
       flashError("Gagal menghapus node — periksa koneksi internet kamu.");
     }
   }
@@ -845,6 +885,10 @@ export function FlowBuilderCanvas({
                 if (!from || !to) return null;
                 const { fromPort, fromSide, toPort, toSide } = resolveConnectionPorts(c, from, to);
                 const d = routedPaths?.get(c.id) ?? previewPath(fromPort, fromSide, toPort, toSide);
+                // Pulled a bit outward from the node's own edge so this handle's hit area
+                // never overlaps the node's body (which would otherwise steal the pointerdown
+                // and start moving the node instead of grabbing the connector).
+                const handlePos = offsetPoint(toPort, toSide, 11);
                 return (
                   <g key={c.id}>
                     <path
@@ -855,17 +899,24 @@ export function FlowBuilderCanvas({
                       markerEnd={`url(#arrowhead-${c.connectionType})`}
                     />
                     <circle
-                      cx={toPort.x}
-                      cy={toPort.y}
-                      r={6}
-                      fill={EDGE_COLOR[c.connectionType]}
-                      stroke="var(--ink)"
-                      strokeWidth={1.5}
+                      cx={handlePos.x}
+                      cy={handlePos.y}
+                      r={13}
+                      fill="transparent"
                       className="pointer-events-auto cursor-grab"
                       onPointerDown={(e) => startDetachDrag(c, from, to, e)}
                     >
                       <title>Tarik untuk memindah/memutus sambungan ini</title>
                     </circle>
+                    <circle
+                      cx={handlePos.x}
+                      cy={handlePos.y}
+                      r={5}
+                      fill={EDGE_COLOR[c.connectionType]}
+                      stroke="var(--ink)"
+                      strokeWidth={1.5}
+                      className="pointer-events-none"
+                    />
                   </g>
                 );
               })}
@@ -948,7 +999,7 @@ export function FlowBuilderCanvas({
                 onPointerLeave={() => setHoveredNodeId((h) => (h === node.id ? null : h))}
               >
                 {!isHorizontal && (
-                  <div className="absolute top-[-7px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-border-light bg-surface3" />
+                  <div className="pointer-events-none absolute top-[-7px] left-1/2 h-[11px] w-[11px] -translate-x-1/2 rounded-full border-2 border-border-light bg-surface3" />
                 )}
                 <div className="flex items-center gap-2">
                   <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[12px]">
