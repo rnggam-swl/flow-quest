@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManagedSession } from "@/lib/managedSession";
 import { getParticipantReport } from "@/lib/adminReport";
-import { FlowGraphView } from "@/components/FlowGraphView";
+import { FlowGraphView, FlowViewModeToggle } from "@/components/FlowGraphView";
 import { Eyebrow, Headline } from "@/components/ui";
 
 function fmtSeconds(sec: number | null) {
@@ -36,9 +36,12 @@ export default async function ParticipantReportPage({
       </Link>
       <Eyebrow>Laporan Aktivitas Lengkap</Eyebrow>
       <Headline className="text-[26px]">{report.displayName}</Headline>
-      <p className="mb-6 text-[13.5px] text-muted">
-        {report.email} · {report.school ?? "—"} · {report.groupName ?? "—"}
-      </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[13.5px] text-muted">
+          {report.email} · {report.school ?? "—"} · {report.groupName ?? "—"}
+        </p>
+        <FlowViewModeToggle nativeViewMode={report.flowViewMode} />
+      </div>
 
       <div className="mb-7 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         <StatCard label="Total XP" value={String(report.totalXp)} />
@@ -120,7 +123,7 @@ export default async function ParticipantReportPage({
                 <FlowGraphView
                   nodes={q.graph.nodes}
                   connections={q.graph.connections}
-                  viewMode={report.flowViewMode}
+                  nativeViewMode={report.flowViewMode}
                   idPrefix={`q${q.order}`}
                   maxHeight={480}
                 />

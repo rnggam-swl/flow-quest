@@ -526,12 +526,31 @@ export function autoLayout(
   const remaining = new Map(indeg);
   const queue = ids.filter((id) => indeg.get(id) === 0);
   const visited = new Set(queue);
-  while (queue.length) {
+  while (queue.length || visited.size < ids.length) {
+    if (queue.length === 0) {
+      // Every node left still has an unresolved input, i.e. the rest of the graph
+      // is a cycle — which is normal here, since a recovery edge (Error back to
+      // Registration Form) closes a loop through the whole flow. Break in at
+      // whichever remaining node has the fewest unresolved inputs (ties go to the
+      // earliest node) and carry on, instead of leaving every node stuck on level
+      // 0 and laying the entire flow out as one flat row.
+      const next = ids
+        .filter((id) => !visited.has(id))
+        .sort((a, b) => remaining.get(a)! - remaining.get(b)!)[0];
+      if (next === undefined) break;
+      visited.add(next);
+      queue.push(next);
+    }
     const id = queue.shift()!;
     for (const target of adj.get(id) ?? []) {
-      level.set(target, Math.max(level.get(target)!, level.get(id)! + 1));
       remaining.set(target, remaining.get(target)! - 1);
-      if (remaining.get(target) === 0 && !visited.has(target)) {
+      // A target that's already been placed is reached by a back edge; pushing it
+      // deeper would drag the flow's own entry point below the nodes that lead
+      // back into it. In an acyclic graph a node is only ever visited once all of
+      // its inputs are resolved, so this never fires and levels are unchanged.
+      if (visited.has(target)) continue;
+      level.set(target, Math.max(level.get(target)!, level.get(id)! + 1));
+      if (remaining.get(target)! <= 0) {
         visited.add(target);
         queue.push(target);
       }

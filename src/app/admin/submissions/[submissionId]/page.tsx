@@ -69,9 +69,10 @@ export default async function SubmissionViewerPage({
           <FlowGraphView
             nodes={submission.FlowNode}
             connections={submission.FlowConnection}
-            viewMode={participant?.flowViewMode ?? "HORIZONTAL"}
+            nativeViewMode={participant?.flowViewMode ?? "HORIZONTAL"}
             idPrefix="submission"
             maxHeight={620}
+            showToggle
           />
         </div>
 
