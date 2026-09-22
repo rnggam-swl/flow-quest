@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManagedSession } from "@/lib/managedSession";
 import { getParticipantReport } from "@/lib/adminReport";
+import { FlowGraphView } from "@/components/FlowGraphView";
 import { Eyebrow, Headline } from "@/components/ui";
 
 function fmtSeconds(sec: number | null) {
@@ -115,16 +116,14 @@ export default async function ParticipantReportPage({
                 </span>
                 <span className="ml-3 text-muted2">({q.status})</span>
               </div>
-              <div className="mb-2.5 flex flex-wrap items-center rounded-[10px] border border-border-light bg-surface2 p-3">
-                {q.flowSteps.length === 0 && <span className="text-muted2">Belum ada node.</span>}
-                {q.flowSteps.map((label, i) => (
-                  <span key={i} className="flex items-center">
-                    <span className="whitespace-nowrap rounded-[8px] bg-surface px-2.5 py-1.5 text-[12px] font-semibold">
-                      {label}
-                    </span>
-                    {i < q.flowSteps.length - 1 && <span className="mx-1 text-muted2">→</span>}
-                  </span>
-                ))}
+              <div className="mb-2.5">
+                <FlowGraphView
+                  nodes={q.graph.nodes}
+                  connections={q.graph.connections}
+                  viewMode={report.flowViewMode}
+                  idPrefix={`q${q.order}`}
+                  maxHeight={480}
+                />
               </div>
               {q.reflection && (
                 <p className="text-[13px] italic leading-[1.6] text-muted">&quot;{q.reflection}&quot;</p>

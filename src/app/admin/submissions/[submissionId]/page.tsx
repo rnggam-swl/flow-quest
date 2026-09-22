@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { orderNodesForDisplay, getRubricMax } from "@/lib/flowScoring";
+import { getRubricMax } from "@/lib/flowScoring";
+import { FlowGraphView } from "@/components/FlowGraphView";
 import { Eyebrow, Headline } from "@/components/ui";
 
 export default async function SubmissionViewerPage({
@@ -34,7 +35,6 @@ export default async function SubmissionViewerPage({
       })
     : null;
 
-  const orderedNodes = orderNodesForDisplay(submission.FlowNode, submission.FlowConnection);
   const score = submission.Score;
   const max = getRubricMax(submission.Quest.order);
   const withReflection = submission.Quest.order === 2 || submission.Quest.order === 5;
@@ -62,21 +62,17 @@ export default async function SubmissionViewerPage({
       <Headline className="text-[26px]">{participant?.displayName ?? "Peserta"}</Headline>
 
       <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <div className="relative min-h-[280px] overflow-x-auto rounded-[14px] border border-border bg-surface p-5">
+        <div className="relative min-h-[280px] rounded-[14px] border border-border bg-surface p-5">
           <div className="mb-3.5 text-[11px] font-semibold uppercase tracking-[1px] text-muted2">
             Flow yang Disusun
           </div>
-          <div className="flex flex-wrap items-center">
-            {orderedNodes.length === 0 && <span className="text-muted2">Belum ada node.</span>}
-            {orderedNodes.map((n, i) => (
-              <span key={n.id} className="flex items-center">
-                <span className="whitespace-nowrap rounded-[9px] border border-border-light bg-surface2 px-3.5 py-2.5 text-[12.5px] font-semibold">
-                  {n.label}
-                </span>
-                {i < orderedNodes.length - 1 && <span className="mx-1.5 text-[15px] text-muted2">→</span>}
-              </span>
-            ))}
-          </div>
+          <FlowGraphView
+            nodes={submission.FlowNode}
+            connections={submission.FlowConnection}
+            viewMode={participant?.flowViewMode ?? "HORIZONTAL"}
+            idPrefix="submission"
+            maxHeight={620}
+          />
         </div>
 
         <div className="flex flex-col gap-3.5">

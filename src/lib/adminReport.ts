@@ -31,6 +31,12 @@ export interface Quest1Report {
   correct: boolean | null;
 }
 
+/** The participant's graph exactly as stored, so the admin pages can redraw it as a canvas instead of flattening it into one chain. */
+export interface FlowGraphData {
+  nodes: { id: string; label: string; nodeType: string; positionX: number; positionY: number }[];
+  connections: { id: string; sourceNodeId: string; targetNodeId: string; connectionType: string }[];
+}
+
 export interface FlowQuestReport {
   order: number;
   title: string;
@@ -42,7 +48,9 @@ export interface FlowQuestReport {
   revisionCount: number;
   totalScore: number | null;
   maxScore: number;
+  /** Flattened left-to-right reading of the flow — kept for the CSV export. */
   flowSteps: string[];
+  graph: FlowGraphData;
   reflection: string | null;
 }
 
@@ -55,6 +63,8 @@ export interface ParticipantReport {
   groupName: string | null;
   status: string;
   totalXp: number;
+  /** Orientation the participant built in, so the redrawn graph puts each decision node's Ya/Tidak outputs where they actually were. */
+  flowViewMode: "VERTICAL" | "HORIZONTAL";
   quest1: Quest1Report | null;
   flowQuests: FlowQuestReport[];
   focusLoss: { count: number; totalAwaySeconds: number; events: FocusLossEvent[] };
@@ -141,6 +151,7 @@ function assembleParticipantReport(
         totalScore: null,
         maxScore,
         flowSteps: [],
+        graph: { nodes: [], connections: [] },
         reflection: null,
       };
     }
@@ -164,6 +175,21 @@ function assembleParticipantReport(
       totalScore: submission.Score?.totalScore ?? null,
       maxScore,
       flowSteps: orderedNodes.map((n) => n.label),
+      graph: {
+        nodes: submission.FlowNode.map((n) => ({
+          id: n.id,
+          label: n.label,
+          nodeType: n.nodeType,
+          positionX: n.positionX,
+          positionY: n.positionY,
+        })),
+        connections: submission.FlowConnection.map((c) => ({
+          id: c.id,
+          sourceNodeId: c.sourceNodeId,
+          targetNodeId: c.targetNodeId,
+          connectionType: c.connectionType,
+        })),
+      },
       reflection: ctx.reflectionByUserOrder.get(`${userId}:${sq.order}`) ?? null,
     };
   });
@@ -189,6 +215,7 @@ function assembleParticipantReport(
     groupName: p.User.groupName,
     status: p.status,
     totalXp: p.totalXp,
+    flowViewMode: p.User.flowViewMode,
     quest1,
     flowQuests,
     focusLoss: {
