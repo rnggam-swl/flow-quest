@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManagedSession } from "@/lib/managedSession";
 import { getParticipantReport } from "@/lib/adminReport";
-import { FlowGraphView, FlowViewModeToggle } from "@/components/FlowGraphView";
+import { FlowGraphView } from "@/components/FlowGraphView";
 import { Eyebrow, Headline } from "@/components/ui";
 
 function fmtSeconds(sec: number | null) {
@@ -40,7 +40,12 @@ export default async function ParticipantReportPage({
         <p className="text-[13.5px] text-muted">
           {report.email} · {report.school ?? "—"} · {report.groupName ?? "—"}
         </p>
-        <FlowViewModeToggle nativeViewMode={report.flowViewMode} />
+        <a
+          href={`/api/admin/participant/${sessionParticipantId}/export`}
+          className="rounded-[20px] border border-teal px-3.5 py-1.5 text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal hover:text-ink"
+        >
+          Unduh Semua Jawaban (HTML) ↓
+        </a>
       </div>
 
       <div className="mb-7 grid grid-cols-2 gap-3.5 md:grid-cols-4">

@@ -72,7 +72,6 @@ export default async function SubmissionViewerPage({
             nativeViewMode={participant?.flowViewMode ?? "HORIZONTAL"}
             idPrefix="submission"
             maxHeight={620}
-            showToggle
           />
         </div>
 
