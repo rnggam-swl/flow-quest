@@ -49,3 +49,7 @@ next-env.d.ts
 /.windsurf
 skills-lock.json
 tsconfig.tsbuildinfo
+
+# Modul Latihan plans carry mentors' personal notes about real participants — keep them out of git
+/prisma/practice-plans/*.json
+!/prisma/practice-plans/example.json

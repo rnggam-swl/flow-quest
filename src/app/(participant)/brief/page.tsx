@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { getLatestEnrollment, getQuestList } from "@/lib/participant";
 import { ensureSoloTeam } from "@/lib/soloTeam";
 import { isSessionOpenNow, isWithinPersonalDeadline } from "@/lib/sessionAccess";
+import { getPracticeSummary, hasFinishedAllQuests } from "@/lib/practice/practiceData";
 import { CenteredShell, Eyebrow, Headline, Sub } from "@/components/ui";
 
 export default async function BriefPage() {
@@ -15,6 +16,7 @@ export default async function BriefPage() {
   const scheduleOpen = isSessionOpenNow(enrollment.Session);
   const withinDeadline = isWithinPersonalDeadline(enrollment);
   const sessionOpen = scheduleOpen && withinDeadline;
+  const practice = hasFinishedAllQuests(items) ? await getPracticeSummary(enrollment.id, user.displayName) : null;
 
   return (
     <CenteredShell>
@@ -96,6 +98,27 @@ export default async function BriefPage() {
           return <div key={item.questId}>{content}</div>;
         })}
       </div>
+
+      {practice && (
+        <Link
+          href="/latihan"
+          className="mt-6 block rounded-xl border border-gold-dim p-4 transition-colors hover:border-gold"
+          style={{ background: "linear-gradient(135deg, rgba(69,217,195,0.08), rgba(240,172,63,0.1))" }}
+        >
+          <div className="text-[12px] font-semibold uppercase tracking-[1.5px] text-gold">Lanjutan</div>
+          <div className="font-display mt-1 text-[19px] font-semibold">Modul Latihan Flow</div>
+          <div className="mt-1 text-[13.5px] leading-[1.55] text-muted">
+            {practice.personal
+              ? "Modul yang dipilih khusus dari hasil quest kamu, ditambah latihan memperbaiki flow milikmu sendiri."
+              : "Enam modul inti untuk memperkuat cara kamu menyusun flow."}
+          </div>
+          <div className="mt-2.5 text-[12.5px] font-semibold text-teal">
+            {practice.done === 0
+              ? "Mulai belajar →"
+              : `${practice.done} dari ${practice.total} bagian selesai · Lanjutkan →`}
+          </div>
+        </Link>
+      )}
     </CenteredShell>
   );
 }

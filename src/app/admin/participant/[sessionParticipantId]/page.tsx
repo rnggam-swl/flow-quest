@@ -40,12 +40,20 @@ export default async function ParticipantReportPage({
         <p className="text-[13.5px] text-muted">
           {report.email} · {report.school ?? "—"} · {report.groupName ?? "—"}
         </p>
-        <a
-          href={`/api/admin/participant/${sessionParticipantId}/export`}
-          className="rounded-[20px] border border-teal px-3.5 py-1.5 text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal hover:text-ink"
-        >
-          Unduh Semua Jawaban (HTML) ↓
-        </a>
+        <div className="flex flex-wrap gap-2.5">
+          <Link
+            href={`/admin/latihan/${sessionParticipantId}`}
+            className="rounded-[20px] border border-border-light px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:border-teal hover:text-teal"
+          >
+            Modul Latihan →
+          </Link>
+          <a
+            href={`/api/admin/participant/${sessionParticipantId}/export`}
+            className="rounded-[20px] border border-teal px-3.5 py-1.5 text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal hover:text-ink"
+          >
+            Unduh Semua Jawaban (HTML) ↓
+          </a>
+        </div>
       </div>
 
       <div className="mb-7 grid grid-cols-2 gap-3.5 md:grid-cols-4">

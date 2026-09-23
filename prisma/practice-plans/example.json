@@ -1,0 +1,54 @@
+{
+  "_readme": "Contoh format rencana Modul Latihan, untuk akun 'Peserta Demo' dari prisma/seed.ts. Salin file ini untuk batch baru, ganti sessionCode dan isi setiap rencana, lalu jalankan: npx tsx --env-file=.env prisma/seed-practice-plans.ts prisma/practice-plans/<file>.json --dry-run (hapus --dry-run untuk menyimpan). Edge ditulis 'dari>ke' dengan akhiran :Y (cabang Ya), :N (cabang Tidak), atau :R (jalur pemulihan). Aturan yang tersedia: connected, reach:X, terminal:X, before:A:B, branch:X, twoSides:X, recovery:A:B, not:<edge>. File lain di folder ini diabaikan git karena berisi catatan pribadi peserta.",
+  "sessionCode": "UFQ-0926",
+  "plans": [
+    {
+      "participant": "Peserta Demo",
+      "first": "Demo",
+      "strengths": [
+        "Jalur menuju formulir sudah tepat di semua quest.",
+        "Kamu sudah memikirkan jalan kembali saat gagal di Quest 4."
+      ],
+      "intro": "Modul ini membantu kamu memperkuat tiga hal: memahami tujuan pengguna, meletakkan Success di posisi yang tepat, dan memastikan setiap keputusan punya dua sisi.",
+      "modules": ["A", "B", "C"],
+      "main": {
+        "title": "Perbaiki Flow Quest 5 Kamu",
+        "intro": "Flow ini diambil dari jawaban kamu di User Flow Quest. Perbaiki sampai semua aturan terpenuhi.",
+        "steps": [
+          "Verifikasi NIS sebenarnya pertanyaan apa? Tambahkan cabang Tidak.",
+          "Pindahkan Error supaya tidak muncul setelah Success.",
+          "Tambahkan jalan kembali dari Error."
+        ],
+        "widgets": [
+          {
+            "type": "fixer",
+            "title": "Flow Quest 5 kamu",
+            "nodes": ["home", "clublist", "clubdetail", "regform", "verif", "confirmation", "success", "error"],
+            "start": "home",
+            "initial": [
+              "home>clublist",
+              "clublist>clubdetail",
+              "clubdetail>regform",
+              "regform>verif",
+              "verif>confirmation:Y",
+              "confirmation>success",
+              "success>error"
+            ],
+            "extra": ["verif>error:N", "confirmation>error", "error>regform:R"],
+            "rules": ["twoSides:verif", "terminal:success", "branch:error", "recovery:error:regform"],
+            "solution": [
+              "home>clublist",
+              "clublist>clubdetail",
+              "clubdetail>regform",
+              "regform>verif",
+              "verif>confirmation:Y",
+              "confirmation>success",
+              "verif>error:N",
+              "error>regform:R"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

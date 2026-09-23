@@ -19,6 +19,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin/participants" className="hover:text-text">
             Kelola Peserta
           </Link>
+          <Link href="/admin/latihan" className="hover:text-text">
+            Modul Latihan
+          </Link>
         </nav>
       </div>
       {children}

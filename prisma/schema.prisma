@@ -284,9 +284,27 @@ model SessionParticipant {
   status        ParticipantStatus @default(REGISTERED)
   User          User              @relation(fields: [participantId], references: [id], onDelete: Cascade)
   Session       Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  PracticePlan  PracticePlan?
 
   @@unique([sessionId, participantId])
   @@index([sessionId, status])
+}
+
+// Modul Latihan Flow — the follow-up a participant opens after finishing all five quests.
+// `content` is the mentor-authored plan (greeting name, strengths, which core modules, and a
+// "latihan utama" rebuilt from their own quest answers), validated by practicePlanContentSchema
+// in src/lib/practice/plan.ts; null means no personal plan yet, so they get all six modules.
+// `completedParts` holds finished module keys ("A".."F") plus "main"; `answers` maps a write
+// widget's key (see answerKey) to the text the participant saved.
+model PracticePlan {
+  id                   String             @id @db.Uuid
+  sessionParticipantId String             @unique @db.Uuid
+  content              Json?
+  completedParts       String[]           @default([])
+  answers              Json               @default("{}")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  SessionParticipant   SessionParticipant @relation(fields: [sessionParticipantId], references: [id], onDelete: Cascade)
 }
 
 model SessionQuest {
