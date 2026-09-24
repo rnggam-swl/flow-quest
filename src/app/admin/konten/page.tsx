@@ -27,6 +27,12 @@ export default async function ContentPage() {
         baru dipakai session baru setelah dipublish. Session yang sedang aktif atau sudah ada progres peserta terkunci di versinya sendiri.
       </Sub>
 
+      <p className="-mt-2 text-[13.5px]">
+        <Link href="/admin/konten/panduan" className="text-teal underline">
+          Panduan membuat konten →
+        </Link>
+      </p>
+
       <ContentToolbar cases={caseOptions} />
 
       <div className="mt-6 flex flex-col gap-4">

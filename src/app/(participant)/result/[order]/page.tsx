@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getPlayContext, getQuestList, scoreSubmission } from "@/lib/questPlay";
+import { getPlayContext, getQuestList, responseScores, scoreSubmission } from "@/lib/questPlay";
 import { flowQuestionOf, lastQuestOrder, questOf, quizQuestionsOf } from "@/lib/content/sessionContent";
 import { FlowResultClient } from "./FlowResultClient";
 import { QuizReview } from "./QuizReview";
+import { XpBreakdown } from "./XpBreakdown";
+import { questRewards } from "@/lib/content/rewards";
 
 export default async function QuestResultPage({ params }: { params: Promise<{ order: string }> }) {
   const order = Number((await params).order);
@@ -32,6 +34,10 @@ export default async function QuestResultPage({ params }: { params: Promise<{ or
     return { question: q, answer: r?.answer, correct: r?.correct ?? 0, total: r?.total ?? 0 };
   });
 
+  const rewards = quest.rewards ? questRewards(quest, responseScores(attempt.QuestionResponse)) : null;
+  const rewardById = rewards ? new Map(rewards.questions.map((r) => [r.questionId, r])) : undefined;
+  const xp = rewards ? <XpBreakdown questXp={quest.xp} rewards={rewards} completed /> : null;
+
   const flow = flowQuestionOf(quest);
   const submission = flow
     ? await prisma.flowSubmission.findUnique({
@@ -51,7 +57,8 @@ export default async function QuestResultPage({ params }: { params: Promise<{ or
       <>
         {reviewed.length > 0 && (
           <div className="mx-auto max-w-[600px] px-5 pt-[50px]">
-            <QuizReview items={reviewed} showSummary={false} />
+            {xp}
+            <QuizReview items={reviewed} showSummary={false} rewards={rewardById} />
           </div>
         )}
         <FlowResultClient
@@ -95,7 +102,8 @@ export default async function QuestResultPage({ params }: { params: Promise<{ or
           Flow di quest ini belum sempat dikirim, jadi bagian flow tidak dinilai.
         </p>
       )}
-      <QuizReview items={reviewed} showSummary />
+      {xp}
+      <QuizReview items={reviewed} showSummary rewards={rewardById} />
       <Link
         href={next.href}
         className="mt-6 block w-full rounded-[9px] bg-teal px-[22px] py-3 text-center text-[14.5px] font-semibold text-[#0A2723] transition-colors hover:bg-[#5EE6D1]"

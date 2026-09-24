@@ -369,6 +369,9 @@ export function QuestBuilder({
             </select>
           )}
           <div className={s.hdrRight}>
+            <a href="/admin/konten/panduan" target="_blank" rel="noreferrer" className={cx(s.btn, s.btnGhost)} title="Panduan membuat konten (tab baru)">
+              ? Panduan
+            </a>
             <span className={cx(s.status, dirty && s.statusDirty)}>
               {dirty ? "● Belum disimpan" : hasDraft ? "Draf tersimpan" : initial.publishedVersion ? `Versi ${initial.publishedVersion} (terbit)` : ""}
             </span>

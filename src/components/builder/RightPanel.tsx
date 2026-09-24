@@ -6,6 +6,7 @@ import type { DraftProblem } from "@/lib/content/draftProblems";
 import { QUESTION_TYPE_GROUPS, QUESTION_TYPE_ICONS } from "@/lib/content/builderDefaults";
 import { QUESTION_ID, QUESTION_TYPE_LABELS, type Question, type QuestionType } from "@/lib/content/questions";
 import { MARKDOWN_HINT, MarkdownArea, NumberField, Toggle, cx } from "./fields";
+import { maxQuestXp } from "@/lib/content/rewards";
 import s from "./builder.module.css";
 
 export type PanelTab = "soal" | "quest" | "masalah";
@@ -201,6 +202,49 @@ function QuestTab({
             </label>
           ))}
         </div>
+      </div>
+      <div className={s.psec}>
+        <div className={s.psecT}>Gamifikasi</div>
+        <div className={s.pg}>
+          <Toggle
+            label="XP per soal & combo"
+            on={Boolean(quest.rewards)}
+            onChange={(on) => onChange({ ...quest, rewards: on ? { questionXp: 10, comboBonus: 5, reactions: true } : undefined })}
+          />
+        </div>
+        {quest.rewards && (
+          <>
+            <div className={s.pg}>
+              <label className={s.plbl}>XP per soal benar</label>
+              <NumberField
+                className={s.pin}
+                value={quest.rewards.questionXp}
+                min={0}
+                step={1}
+                onChange={(v) => onChange({ ...quest, rewards: { ...quest.rewards!, questionXp: Math.max(0, Math.round(v ?? 0)) } })}
+              />
+              <div className={s.fieldHint}>Jawaban sebagian benar mendapat bagiannya (dibulatkan ke bawah).</div>
+            </div>
+            <div className={s.pg}>
+              <label className={s.plbl}>Bonus combo</label>
+              <NumberField
+                className={s.pin}
+                value={quest.rewards.comboBonus}
+                min={0}
+                step={1}
+                onChange={(v) => onChange({ ...quest, rewards: { ...quest.rewards!, comboBonus: Math.max(0, Math.round(v ?? 0)) } })}
+              />
+              <div className={s.fieldHint}>Per jawaban benar beruntun: ×1 di jawaban ke-2, ×2 di ke-3, sampai ×4.</div>
+            </div>
+            <div className={s.pg}>
+              <Toggle label="Reaksi setelah menjawab" on={quest.rewards.reactions} onChange={(reactions) => onChange({ ...quest, rewards: { ...quest.rewards!, reactions } })} />
+            </div>
+            <div className={s.fieldHint}>
+              Maks. {maxQuestXp(quest)} XP untuk quest ini.{" "}
+              {quest.checkMode === "end" ? "Dengan Cek di akhir, XP dan combo tampil di halaman hasil; reaksi hanya muncul di Cek langsung." : ""}
+            </div>
+          </>
+        )}
       </div>
       <div className={s.psec}>
         <div className={s.psecT}>Quest</div>

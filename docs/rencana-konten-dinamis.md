@@ -285,4 +285,36 @@ Sub-langkah:
     - duplikat lalu hapus kasus;
     - impor quest/modul (termasuk file salah jenis);
     - rencana: generator dari flow Quest 5, lengkapi contoh jawaban, simpan, muat ulang, preview.
-- [ ] Fase 5
+- [x] Perbaikan bug sebelum Fase 5 (dari code review Fase 2–4 dan uji browser)
+  - Hasil quest yang habis waktu sebelum kanvas flow dikirim tidak lagi berputar ke `/brief`;
+    review quiz tetap tampil.
+  - `/api/quest2/submit` hanya menerima kanvas milik tim dan quest session saat ini yang masih draf.
+  - Penilaian server: hotspot hanya membaca tanda sebanyak jumlah titik, dan branching yang
+    berhenti sebelum ending menghitung pilihan yang tersisa sebagai salah.
+  - Impor dan simpan draf melewati `acceptDraftShape`: default skema diisi, dan isi tanpa field
+    yang dibaca editor ditolak. Draf lama yang rusak membuka halaman pemulihan.
+  - Buang draf/hapus kasus wajib membawa revisi, dan hapus kasus berjalan atomik.
+  - Editor: state JSON widget setelah dipindah, baris fixer kembar, kunci node dengan `_` di
+    Modul Latihan, dan quest terbuka yang dihapus.
+  - Lint bersih: kata sandi peserta dari satu generator CSPRNG, dibuat di server.
+- [x] Fase 5
+  - Gamifikasi (`src/lib/content/rewards.ts`): `rewards` opsional per quest berisi XP per soal
+    benar (sebagian benar dapat bagiannya), bonus combo untuk jawaban benar beruntun (sampai ×4),
+    dan reaksi setelah menjawab di mode cek langsung.
+    - XP dihitung di server saat quest selesai (`completeAttempt`) dengan fungsi yang sama yang
+      dipakai pemutar untuk menampilkan XP berjalan.
+    - Halaman hasil menampilkan rincian XP dan XP per soal; `/brief` menampilkan XP maksimal.
+    - Diatur di tab Quest builder. Quest 3 `ruang-belajar.json` jadi contohnya; Klub Fotografi
+      tidak berubah.
+  - Analitik per soal di `/admin/analitik` (`src/lib/content/analytics.ts`, `analyticsData.ts`),
+    per session:
+    - mulai/selesai/waktu habis/median waktu per quest;
+    - per soal quiz: rata-rata skor, benar penuh, sebaran pilihan (kunci ditandai), dan jawaban
+      belum tepat yang paling sering, dengan tanda ⚠ untuk soal sulit;
+    - per soal flow: sebaran tier dan tingkat lolos setiap check rubrik (dinilai ulang dengan
+      rubrik versi yang di-pin), tersulit di atas.
+  - Panduan: `/admin/konten/panduan` untuk pengguna builder (ditautkan dari Konten dan header
+    builder), dan `docs/panduan-konten.md` sebagai referensi format JSON.
+  - Uji: `rewards.test.ts`, `analytics.test.ts`, `draftShape.test.ts` (total 161 test). Di
+    browser: reaksi dan XP di Quest 3, XP server +165 cocok dengan hitungan, rincian di halaman
+    hasil, analitik session uji, dan halaman panduan.

@@ -4,6 +4,7 @@ import { findQuestionProblems, questionSchema, QUESTION_ID } from "@/lib/content
 import { EDGE_KINDS, evaluateCondition, practiceRuleCondition, type RubricGraph } from "@/lib/content/rubric";
 import { isKnownRule, EDGE_PATTERN } from "@/lib/practice/flowRules";
 import { planWidgetSchema, type FixerWidget, type PlanWidget } from "@/lib/practice/schema";
+import { questRewardsSchema } from "@/lib/content/rewards";
 
 /**
  * A case ("kasus") is the unit of content: the story, the node library every
@@ -36,6 +37,8 @@ export const questContentSchema = z.strictObject({
   /** "instant": each answer is checked (and its feedback shown) right away; "end": all at once after submitting. */
   checkMode: z.enum(["instant", "end"]).default("end"),
   questions: z.array(questionSchema).min(1),
+  /** Optional gamification: XP per right answer, combo bonus, reactions (see rewards.ts). */
+  rewards: questRewardsSchema.optional(),
 });
 export type QuestContent = z.infer<typeof questContentSchema>;
 
@@ -214,6 +217,7 @@ export function findCaseProblems(c: CaseContent): string[] {
     if (q.intro && looksLikeHtml(q.intro)) p.push(`${where}: intro memakai tag HTML; gunakan markdown`);
     for (const id of duplicates(q.questions.map((x) => x.id))) p.push(`${where}: id soal "${id}" terduplikasi`);
     if (q.questions.filter((x) => x.type === "flow").length > 1) p.push(`${where}: maksimal satu soal flow per quest`);
+    if (q.rewards && q.questions.every((x) => x.type === "flow")) p.push(`${where}: XP per soal dan combo hanya berlaku untuk soal quiz; quest ini hanya punya soal flow`);
     q.questions.forEach((x) => p.push(...findQuestionProblems(x, `${where}, soal "${x.id}"`, libraryKeys, nodeTypes)));
   }
 

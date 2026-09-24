@@ -17,6 +17,12 @@ import {
   quizQuestionsOf,
 } from "@/lib/content/sessionContent";
 import type { Prisma, QuestAttempt } from "@/generated/prisma/client";
+import { maxQuestXp, questRewards } from "@/lib/content/rewards";
+
+/** Saved answers as the scores `questRewards` reads. */
+export function responseScores(responses: { questionKey: string; correct: number; total: number }[]) {
+  return new Map(responses.map((r) => [r.questionKey, { correct: r.correct, total: r.total }]));
+}
 
 /**
  * Everything about playing a quest, for any quest a case defines: the quest
@@ -35,6 +41,8 @@ export interface QuestListItem {
   title: string;
   objective: string;
   xp: number;
+  /** Completion XP plus the most its rewards can add (equal to `xp` without rewards). */
+  maxXp: number;
   timeLimitMinutes: number | null;
   state: QuestState;
 }
@@ -60,6 +68,7 @@ export async function getQuestList(sessionParticipantId: string, sessionId: stri
         title: quest.title,
         objective: quest.objective,
         xp: quest.xp,
+        maxXp: maxQuestXp(quest),
         timeLimitMinutes: effectiveTimeLimit(quest, sq.timeLimitMinutes),
         state,
       },
@@ -121,11 +130,13 @@ export async function completeAttempt(attempt: QuestAttempt, quest: QuestContent
   });
   if (count === 0) return false;
 
+  // Per-answer XP and combo (when the quest has rewards), from the answers saved in this attempt.
+  const bonus = quest.rewards ? questRewards(quest, responseScores(await prisma.questionResponse.findMany({ where: { attemptId: attempt.id } }))).total : 0;
   const isLast = quest.order >= lastQuestOrder(ctx.content);
   await prisma.sessionParticipant.update({
     where: { id: ctx.sessionParticipantId },
     data: {
-      totalXp: { increment: quest.xp },
+      totalXp: { increment: quest.xp + bonus },
       ...(isLast ? { status: timeExpired ? "TIME_EXPIRED" : "COMPLETED", completedAt: now } : {}),
     },
   });

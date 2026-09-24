@@ -73,14 +73,14 @@ export default async function BriefPage() {
                 <div className="mt-0.5 text-[12px] text-muted2">
                   {locked
                     ? "Selesaikan quest sebelumnya dulu"
-                    : `+${item.xp} XP${item.timeLimitMinutes ? ` · ${item.timeLimitMinutes} menit` : ""}`}
+                    : `${item.maxXp > item.xp ? `+${item.xp} XP selesai, bonus jawaban benar & combo` : `+${item.xp} XP`}${item.timeLimitMinutes ? ` · ${item.timeLimitMinutes} menit` : ""}`}
                 </div>
               </div>
               {locked ? (
                 <span className="text-[16px] text-muted2">🔒</span>
               ) : (
-                <span className="whitespace-nowrap text-[12px] font-semibold text-gold">
-                  +{item.xp} XP
+                <span className="whitespace-nowrap text-[12px] font-semibold text-gold" title={item.maxXp > item.xp ? "XP paling banyak yang bisa didapat" : undefined}>
+                  {item.maxXp > item.xp ? `s.d. +${item.maxXp}` : `+${item.xp}`} XP
                 </span>
               )}
             </div>

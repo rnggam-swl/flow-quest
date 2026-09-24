@@ -64,6 +64,7 @@ export default async function QuestPage({ params }: { params: Promise<{ order: s
       questLabel={questLabel}
       intro={quest.intro}
       checkMode={quest.checkMode}
+      rewards={quest.rewards}
       questions={questions}
       remainingSeconds={remaining}
       hasFlowAfter={Boolean(flow)}

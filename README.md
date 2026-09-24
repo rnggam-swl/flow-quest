@@ -172,6 +172,18 @@ progress in it (`src/lib/content/versionLock.ts`). Any other session can be move
 version, from the publish dialog or with *Perbarui* on `/admin/konten` or the session history;
 moving it also brings its quest list in line with the new version.
 
+## Gamification & analytics
+
+- A quest can have `rewards`: XP for each quiz question answered right (partial credit earns its
+  share), a combo bonus for right answers in a row, and reactions after each checked answer
+  (instant-check quests). XP is added on the server when the quest completes, and the result page
+  shows the breakdown (`src/lib/content/rewards.ts`; set in the builder's Quest tab).
+- `/admin/analitik` shows, per session, how hard each question was: average score, how many got it
+  fully right, which options were picked, the wrong answers given most often, and for flow
+  questions the tier spread and how many canvases met each rubric check.
+- `/admin/konten/panduan` is the guide for making content in the builder;
+  `docs/panduan-konten.md` is the JSON reference for case files.
+
 ## Modul Latihan Flow
 
 The follow-up to the quests, opened from `/brief` once a participant has finished them all (it
