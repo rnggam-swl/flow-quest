@@ -11,19 +11,30 @@ interface SessionRow {
   status: string;
   createdAt: string;
   participantCount: number;
+  caseTitle: string;
+  caseVersion: number | null;
+}
+
+interface CaseOption {
+  id: string;
+  title: string;
+  version: number;
 }
 
 export function SessionHistory({
   sessions,
   currentSessionId,
+  cases,
 }: {
   sessions: SessionRow[];
   currentSessionId: string;
+  cases: CaseOption[];
 }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [sessionCode, setSessionCode] = useState("");
+  const [scenarioId, setScenarioId] = useState(cases[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +45,7 @@ export function SessionHistory({
       const res = await fetch("/api/admin/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, sessionCode }),
+        body: JSON.stringify({ title, sessionCode, scenarioId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -60,6 +71,20 @@ export function SessionHistory({
         </Button>
       ) : (
         <div className="rounded-[14px] border border-border bg-surface p-5">
+          <Field label="Kasus" htmlFor="newCase">
+            <select
+              id="newCase"
+              value={scenarioId}
+              onChange={(e) => setScenarioId(e.target.value)}
+              className="w-full rounded-[9px] border border-border-light bg-surface2 px-[13px] py-[11px] text-[14.5px] text-text outline-none focus:border-teal"
+            >
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title} (versi {c.version})
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Judul Session" htmlFor="newTitle">
             <Input
               id="newTitle"
@@ -77,7 +102,7 @@ export function SessionHistory({
             />
           </Field>
           <div className="flex gap-2">
-            <Button onClick={handleCreate} disabled={creating || !title.trim() || !sessionCode.trim()}>
+            <Button onClick={handleCreate} disabled={creating || !title.trim() || !sessionCode.trim() || !scenarioId}>
               {creating ? "Membuat…" : "Buat Session"}
             </Button>
             <Button variant="ghost" onClick={() => setShowForm(false)} disabled={creating}>
@@ -93,6 +118,7 @@ export function SessionHistory({
             <tr className="bg-surface2 text-left text-[12px] uppercase tracking-[0.5px] text-muted">
               <th className="px-4 py-2.5 font-semibold">Judul</th>
               <th className="px-4 py-2.5 font-semibold">Kode</th>
+              <th className="px-4 py-2.5 font-semibold">Kasus</th>
               <th className="px-4 py-2.5 font-semibold">Status</th>
               <th className="px-4 py-2.5 font-semibold">Peserta</th>
               <th className="px-4 py-2.5 font-semibold">Dibuat</th>
@@ -110,6 +136,10 @@ export function SessionHistory({
                   )}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-[12.5px] text-muted">{s.sessionCode}</td>
+                <td className="px-4 py-2.5 text-muted2">
+                  {s.caseTitle}
+                  {s.caseVersion !== null && <span className="text-[11.5px]"> · v{s.caseVersion}</span>}
+                </td>
                 <td className="px-4 py-2.5 text-muted2">{s.status}</td>
                 <td className="px-4 py-2.5 text-muted2">{s.participantCount}</td>
                 <td className="px-4 py-2.5 text-muted2">

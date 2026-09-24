@@ -182,6 +182,7 @@ model Quest {
   Scenario         Scenario          @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
   SessionQuest     SessionQuest[]
   TeamDecision     TeamDecision[]
+  QuestAttempt     QuestAttempt[]
 
   @@unique([scenarioId, order])
 }
@@ -226,12 +227,36 @@ model Role {
 }
 
 model Scenario {
-  id              String  @id @db.Uuid
+  id              String            @id @db.Uuid
   title           String
   description     String
   userDescription String?
   userGoal        String?
+  // Slug from the case file (caseContentSchema.key); null for rows this app didn't create from one.
+  key             String?           @unique
   Quest           Quest[]
+  ScenarioVersion ScenarioVersion[]
+}
+
+// A snapshot of one case's content — the whole caseContentSchema document from
+// src/lib/content/case.ts (node library, quests and their questions, Modul Latihan modules).
+// Each Session pins the version it runs, so editing or re-importing a case never changes a
+// session that has already started.
+model ScenarioVersion {
+  id          String        @id @db.Uuid
+  scenarioId  String        @db.Uuid
+  version     Int
+  status      ContentStatus @default(DRAFT)
+  content     Json
+  note        String?
+  createdBy   String?       @db.Uuid
+  createdAt   DateTime      @default(now())
+  publishedAt DateTime?
+  Scenario    Scenario      @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  User        User?         @relation(fields: [createdBy], references: [id])
+  Session     Session[]
+
+  @@unique([scenarioId, version])
 }
 
 model Score {
@@ -270,6 +295,9 @@ model Session {
   SessionParticipant SessionParticipant[]
   SessionQuest       SessionQuest[]
   Team               Team[]
+  // The case content this session runs (null only for sessions of cases that predate versioning).
+  scenarioVersionId  String?              @db.Uuid
+  ScenarioVersion    ScenarioVersion?     @relation(fields: [scenarioVersionId], references: [id])
 }
 
 model SessionParticipant {
@@ -285,9 +313,43 @@ model SessionParticipant {
   User          User              @relation(fields: [participantId], references: [id], onDelete: Cascade)
   Session       Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   PracticePlan  PracticePlan?
+  QuestAttempt  QuestAttempt[]
 
   @@unique([sessionId, participantId])
   @@index([sessionId, status])
+}
+
+// One participant's run at one quest — timing and status for every quest type. A flow
+// question's canvas still lives in FlowSubmission (per solo team, scored into Score); quiz
+// answers hang off the attempt as QuestionResponse rows.
+model QuestAttempt {
+  id                   String             @id @db.Uuid
+  sessionParticipantId String             @db.Uuid
+  questId              String             @db.Uuid
+  status               SubmissionStatus   @default(DRAFT)
+  startedAt            DateTime           @default(now())
+  submittedAt          DateTime?
+  timeSpentSeconds     Int?
+  SessionParticipant   SessionParticipant @relation(fields: [sessionParticipantId], references: [id], onDelete: Cascade)
+  Quest                Quest              @relation(fields: [questId], references: [id])
+  QuestionResponse     QuestionResponse[]
+
+  @@unique([sessionParticipantId, questId])
+}
+
+// A participant's answer to one quiz question (questionKey = the question's `id` in the
+// pinned case content), with its score as { correct, total } from scoreQuestion.
+model QuestionResponse {
+  id           String       @id @db.Uuid
+  attemptId    String       @db.Uuid
+  questionKey  String
+  answer       Json
+  correct      Float
+  total        Float
+  answeredAt   DateTime     @default(now())
+  QuestAttempt QuestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionKey])
 }
 
 // Modul Latihan Flow — the follow-up a participant opens after finishing all five quests.
@@ -308,12 +370,15 @@ model PracticePlan {
 }
 
 model SessionQuest {
-  id        String  @id @db.Uuid
-  sessionId String  @db.Uuid
-  questId   String  @db.Uuid
-  order     Int
-  Quest     Quest   @relation(fields: [questId], references: [id])
-  Session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id               String  @id @db.Uuid
+  sessionId        String  @db.Uuid
+  questId          String  @db.Uuid
+  order            Int
+  // This session's timer for the quest, overriding the pinned content's timeLimitMinutes
+  // (null: use the content's; 0: no timer).
+  timeLimitMinutes Int?
+  Quest            Quest   @relation(fields: [questId], references: [id])
+  Session          Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, order])
   @@unique([sessionId, questId])
@@ -396,6 +461,7 @@ model User {
   SessionParticipant  SessionParticipant[]
   TeamMember          TeamMember[]
   Vote                Vote[]
+  ScenarioVersion     ScenarioVersion[]
 }
 
 model Vote {
@@ -433,6 +499,12 @@ enum ActivityEventType {
   REFLECTION_SUBMITTED
   TEAM_MESSAGE
   FOCUS_LOST
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum AppRole {

@@ -1,55 +1,19 @@
 /**
- * Seeds the "Pendaftaran Klub Fotografi" content (Scenario/Quest/Session) that
- * this app actually plays, as brand-new rows alongside the pre-existing
- * "Meeting Room Booking" demo data — nothing pre-existing is modified.
- * Idempotent: safe to re-run (upserts by natural keys).
+ * Seeds what this app needs to run from scratch: an admin account, a demo
+ * participant, the Klub Fotografi case (imported from prisma/cases/ as a
+ * published version, like prisma/import-case.ts does), and a demo session
+ * pinned to that version with the demo participant enrolled. Rows that
+ * already exist are left as they are, so it's safe to re-run.
  */
+import { readFileSync } from "fs";
+import path from "path";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
-import { SCENARIO_TITLE, SESSION_CODE } from "../src/lib/constants";
+import { parseCase } from "../src/lib/content/case";
+import { importCase } from "../src/lib/content/importCase";
 
-const QUEST_DEFS = [
-  {
-    order: 1,
-    title: "Find the Goal",
-    objective:
-      "Identifikasi tujuan sebenarnya dari pengguna (Rani) yang ingin mendaftar Klub Fotografi lewat aplikasi sekolah.",
-    xp: 20,
-    timeLimitMinutes: null as number | null,
-  },
-  {
-    order: 2,
-    title: "Build the Path",
-    objective:
-      "Susun user flow lengkap dari Home sampai berhasil mendaftar (Success), termasuk menemukan klub dan menangani kemungkinan error.",
-    xp: 50,
-    timeLimitMinutes: 5,
-  },
-  {
-    order: 3,
-    title: "Add the Logic",
-    objective:
-      "Tambahkan node keputusan (Verifikasi NIS) ke flow dan tangani kedua kemungkinan hasilnya: valid lanjut ke Success, tidak valid ke Error.",
-    xp: 50,
-    timeLimitMinutes: 6,
-  },
-  {
-    order: 4,
-    title: "Break the Flow",
-    objective:
-      "Sistem bisa gagal saat mengonfirmasi pendaftaran. Susun flow yang tetap punya jalur normal, jalur gagal, dan jalur pemulihan.",
-    xp: 50,
-    timeLimitMinutes: 6,
-  },
-  {
-    order: 5,
-    title: "Final Challenge",
-    objective:
-      "Gabungkan semua yang sudah dipelajari: flow lengkap dari Home sampai Success, verifikasi NIS, dan penanganan error — plus alasan tertulis.",
-    xp: 100,
-    timeLimitMinutes: 8,
-  },
-];
+const CASE_FILE = path.join(import.meta.dirname, "cases/klub-fotografi.json");
+const DEMO_SESSION_CODE = "UFQ-0926";
 
 async function main() {
   const adminEmail = requireEnv("SEED_ADMIN_EMAIL").toLowerCase();
@@ -85,88 +49,43 @@ async function main() {
   });
   console.log(`Demo participant ready: ${demoParticipant.email}`);
 
-  let scenario = await prisma.scenario.findFirst({ where: { title: SCENARIO_TITLE } });
-  if (!scenario) {
-    scenario = await prisma.scenario.create({
+  const parsed = parseCase(JSON.parse(readFileSync(CASE_FILE, "utf8")));
+  if (!parsed.ok) throw new Error(`${CASE_FILE} has problems:\n${parsed.problems.join("\n")}`);
+  const imported = await importCase(prisma, parsed.content, { note: "Diimpor oleh prisma/seed.ts" });
+  console.log(`Case "${parsed.content.title}" ${imported.status === "unchanged" ? "already at" : "imported as"} version ${imported.version}.`);
+  const version = await prisma.scenarioVersion.findFirstOrThrow({ where: { scenarioId: imported.scenarioId!, version: imported.version } });
+  const questRows = await prisma.quest.findMany({ where: { scenarioId: imported.scenarioId! } });
+
+  let session = await prisma.session.findUnique({ where: { sessionCode: DEMO_SESSION_CODE } });
+  if (!session) {
+    session = await prisma.session.create({
       data: {
         id: crypto.randomUUID(),
-        title: SCENARIO_TITLE,
-        description:
-          "Rani membuka aplikasi sekolah karena ingin bergabung dengan Klub Fotografi. Ia perlu memasukkan Nomor Induk Siswa untuk bisa mendaftar.",
-        userDescription: "Rani, siswa SMK",
-        userGoal: "Berhasil mendaftar menjadi anggota Klub Fotografi",
+        title: "User Flow Quest — Demo",
+        sessionCode: DEMO_SESSION_CODE,
+        status: "DRAFT",
+        timeLimitMinutes: 60,
+        createdBy: adminUser.id,
+        scenarioVersionId: version.id,
       },
     });
-    console.log(`Scenario created: ${scenario.title}`);
+    await prisma.sessionQuest.createMany({
+      data: parsed.content.quests.map((q) => ({
+        id: crypto.randomUUID(),
+        sessionId: session!.id,
+        questId: questRows.find((r) => r.order === q.order)!.id,
+        order: q.order,
+      })),
+    });
+    console.log(`Session created: ${session.sessionCode} (pinned to version ${version.version})`);
   } else {
-    console.log(`Scenario already exists, reusing: ${scenario.title}`);
+    console.log(`Session already exists, left as is: ${session.sessionCode}`);
   }
-
-  const quests: Record<number, { id: string }> = {};
-  for (const def of QUEST_DEFS) {
-    const quest = await prisma.quest.upsert({
-      where: { scenarioId_order: { scenarioId: scenario.id, order: def.order } },
-      update: {
-        title: def.title,
-        objective: def.objective,
-        xp: def.xp,
-        timeLimitMinutes: def.timeLimitMinutes,
-        published: true,
-      },
-      create: {
-        id: crypto.randomUUID(),
-        scenarioId: scenario.id,
-        order: def.order,
-        title: def.title,
-        objective: def.objective,
-        xp: def.xp,
-        timeLimitMinutes: def.timeLimitMinutes,
-        published: true,
-      },
-    });
-    quests[def.order] = { id: quest.id };
-  }
-  console.log(`${QUEST_DEFS.length} quests ready under scenario.`);
-
-  const session = await prisma.session.upsert({
-    where: { sessionCode: SESSION_CODE },
-    update: {},
-    create: {
-      id: crypto.randomUUID(),
-      title: "User Flow Quest — September Batch",
-      description:
-        "Lima quest membawa peserta dari memahami tujuan pengguna sampai menyusun flow lengkap dengan alasannya.",
-      sessionCode: SESSION_CODE,
-      status: "DRAFT",
-      timeLimitMinutes: 60,
-      createdBy: adminUser.id,
-    },
-  });
-  console.log(`Session ready: ${session.sessionCode} (status: ${session.status})`);
-
-  for (const def of QUEST_DEFS) {
-    await prisma.sessionQuest.upsert({
-      where: { sessionId_order: { sessionId: session.id, order: def.order } },
-      update: { questId: quests[def.order].id },
-      create: {
-        id: crypto.randomUUID(),
-        sessionId: session.id,
-        questId: quests[def.order].id,
-        order: def.order,
-      },
-    });
-  }
-  console.log("SessionQuest links ready.");
 
   await prisma.sessionParticipant.upsert({
     where: { sessionId_participantId: { sessionId: session.id, participantId: demoParticipant.id } },
     update: {},
-    create: {
-      id: crypto.randomUUID(),
-      sessionId: session.id,
-      participantId: demoParticipant.id,
-      status: "REGISTERED",
-    },
+    create: { id: crypto.randomUUID(), sessionId: session.id, participantId: demoParticipant.id, status: "REGISTERED" },
   });
   console.log("Demo participant enrolled in session.");
 }

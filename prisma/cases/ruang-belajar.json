@@ -1,0 +1,341 @@
+{
+  "key": "ruang-belajar",
+  "title": "Pemesanan Ruang Belajar Perpustakaan",
+  "description": "Dimas, mahasiswa semester 3, ingin memesan ruang belajar kelompok di perpustakaan kampus untuk besok pukul 13.00. Satu slot ruang belajar berdurasi 2 jam, dan slot bisa penuh kalau sudah dipesan kelompok lain.",
+  "persona": "Dimas, mahasiswa semester 3",
+  "userGoal": "Punya ruang belajar yang sudah terpesan untuk kelompoknya besok pukul 13.00",
+  "brief": "Tiga quest membawa kamu dari memahami kebutuhan Dimas sampai menyusun flow pemesanan yang tahan gagal.\n\n- **Quest 1:** kenali tujuan Dimas dan risikonya.\n- **Quest 2:** susun flow pemesanan di kanvas.\n- **Quest 3:** uji pemahaman lewat berbagai jenis soal.\n\nSelesaikan berurutan untuk membuka quest berikutnya.",
+  "nodes": [
+    { "key": "beranda", "label": "Beranda", "nodeType": "SCREEN", "icon": "🏠" },
+    { "key": "daftarruang", "label": "Daftar Ruang", "nodeType": "SCREEN", "icon": "📋" },
+    { "key": "detailruang", "label": "Detail Ruang", "nodeType": "SCREEN", "icon": "🚪" },
+    { "key": "cekslot", "label": "Slot tersedia?", "nodeType": "DECISION", "icon": "❔" },
+    { "key": "formpesan", "label": "Form Pemesanan", "nodeType": "SCREEN", "icon": "📝" },
+    { "key": "konfirmasi", "label": "Konfirmasi", "nodeType": "SYSTEM", "icon": "⚙️" },
+    { "key": "berhasil", "label": "Pemesanan Berhasil", "nodeType": "OUTCOME", "icon": "✅" },
+    { "key": "penuh", "label": "Slot Penuh", "nodeType": "ERROR", "icon": "🚫" },
+    { "key": "gagal", "label": "Gagal Menyimpan", "nodeType": "ERROR", "icon": "⚠️" }
+  ],
+  "quests": [
+    {
+      "order": 1,
+      "title": "Kenali Dimas",
+      "objective": "Pahami tujuan Dimas dan apa saja yang bisa menggagalkan pemesanannya.",
+      "xp": 30,
+      "timeLimitMinutes": null,
+      "checkMode": "end",
+      "intro": "Dimas ingin memesan ruang belajar kelompok untuk besok pukul 13.00 lewat aplikasi perpustakaan.",
+      "questions": [
+        {
+          "type": "singlechoice",
+          "id": "tujuan",
+          "prompt": "Apa tujuan Dimas yang sebenarnya?",
+          "options": [
+            { "text": "Membuka aplikasi perpustakaan" },
+            { "text": "Melihat daftar ruang belajar" },
+            { "text": "Punya ruang yang sudah terpesan untuk besok pukul 13.00", "correct": true },
+            { "text": "Mengisi formulir pemesanan" }
+          ],
+          "feedback": {
+            "correct": "**Tepat.** Semua langkah lain hanya cara menuju ke sana.",
+            "incorrect": "Itu masih *langkah*. Dimas baru tenang kalau ruangnya **sudah terpesan**."
+          }
+        },
+        {
+          "type": "multiselect",
+          "id": "risiko",
+          "prompt": "Hal apa saja yang bisa membuat pemesanan Dimas gagal?",
+          "help": "Pilih semua yang benar.",
+          "options": [
+            { "text": "Slot pukul 13.00 sudah penuh", "correct": true },
+            { "text": "Koneksi terputus saat pemesanan disimpan", "correct": true },
+            { "text": "Dimas membuka aplikasi dari HP" },
+            { "text": "Kelompok lain memesan ruang yang sama lebih dulu", "correct": true }
+          ]
+        },
+        {
+          "type": "sequencing",
+          "id": "langkah",
+          "prompt": "Urutkan langkah pemesanan yang paling masuk akal.",
+          "items": [
+            { "text": "Buka Beranda" },
+            { "text": "Pilih ruang dari Daftar Ruang" },
+            { "text": "Cek apakah slot tersedia" },
+            { "text": "Isi Form Pemesanan" },
+            { "text": "Konfirmasi pemesanan" }
+          ]
+        },
+        {
+          "type": "boolean",
+          "id": "cek-akhir",
+          "prompt": "Apakah pengecekan slot sebaiknya dilakukan setelah Dimas selesai mengisi formulir?",
+          "answer": false,
+          "feedback": {
+            "correct": "Betul. Cek sedini mungkin supaya Dimas tidak buang waktu mengisi formulir.",
+            "incorrect": "Kalau baru dicek setelah formulir, Dimas bisa sudah repot mengisi lalu ternyata slotnya penuh."
+          }
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "title": "Susun Jalur Pemesanan",
+      "objective": "Susun flow dari Beranda sampai pemesanan berhasil, lengkap dengan cek slot dan jalan kembali saat gagal.",
+      "xp": 80,
+      "timeLimitMinutes": 20,
+      "checkMode": "end",
+      "questions": [
+        {
+          "type": "flow",
+          "id": "flow",
+          "prompt": "Dimas ingin memesan ruang belajar untuk besok pukul 13.00. Susun flow-nya dari Beranda sampai Pemesanan Berhasil.",
+          "palette": ["beranda", "daftarruang", "detailruang", "cekslot", "formpesan", "konfirmasi", "berhasil", "penuh", "gagal"],
+          "rubric": {
+            "checks": {
+              "hasBeranda": { "label": "Ada Beranda", "when": { "has": "beranda" } },
+              "hasBerhasil": { "label": "Ada Pemesanan Berhasil", "when": { "has": "berhasil" } },
+              "berandaToForm": { "label": "Beranda sampai ke Form Pemesanan", "when": { "reach": { "from": "beranda", "to": "formpesan" } } },
+              "formToKonfirmasi": { "label": "Form Pemesanan sampai ke Konfirmasi", "when": { "reach": { "from": "formpesan", "to": "konfirmasi" } } },
+              "konfirmasiToBerhasil": { "label": "Konfirmasi sampai ke Pemesanan Berhasil", "when": { "reach": { "from": "konfirmasi", "to": "berhasil" } } },
+              "yesToForm": { "label": "Cabang Ya dari Slot tersedia? sampai ke Form Pemesanan", "when": { "branch": { "from": "cekslot", "side": "YES", "reaches": "formpesan" } } },
+              "noToPenuh": { "label": "Cabang Tidak dari Slot tersedia? sampai ke Slot Penuh", "when": { "branch": { "from": "cekslot", "side": "NO", "reaches": "penuh" } } },
+              "checkedEarly": { "label": "Slot dicek sebelum Form Pemesanan", "when": { "reach": { "from": "detailruang", "to": "cekslot", "skipRecovery": true } } },
+              "gagalBranch": { "label": "Konfirmasi bisa gagal", "when": { "reach": { "from": "konfirmasi", "to": "gagal", "skipRecovery": true } } },
+              "gagalRecovers": { "label": "Gagal Menyimpan kembali ke Form Pemesanan", "when": { "edge": { "from": "gagal", "to": "formpesan", "kind": "RECOVERY" } } },
+              "penuhRecovers": { "label": "Slot Penuh kembali ke Daftar Ruang", "when": { "edge": { "from": "penuh", "to": "daftarruang", "kind": "RECOVERY" } } },
+              "berhasilTerminal": { "label": "Pemesanan Berhasil tidak punya panah keluar", "when": { "terminal": "berhasil" } }
+            },
+            "scores": {
+              "goal": {
+                "max": 20,
+                "cases": [
+                  { "when": { "all": [{ "check": "hasBeranda" }, { "check": "hasBerhasil" }] }, "points": 20 },
+                  { "when": { "any": [{ "check": "hasBeranda" }, { "check": "hasBerhasil" }] }, "points": 10 }
+                ],
+                "otherwise": 0
+              },
+              "flow": {
+                "max": 25,
+                "cases": [
+                  { "when": { "all": [{ "check": "berandaToForm" }, { "check": "formToKonfirmasi" }, { "check": "konfirmasiToBerhasil" }] }, "points": 25 },
+                  { "when": { "atLeast": 2, "of": [{ "check": "berandaToForm" }, { "check": "formToKonfirmasi" }, { "check": "konfirmasiToBerhasil" }] }, "points": 15 },
+                  { "when": { "atLeast": 1, "of": [{ "check": "berandaToForm" }, { "check": "formToKonfirmasi" }, { "check": "konfirmasiToBerhasil" }] }, "points": 8 }
+                ],
+                "otherwise": 0
+              },
+              "logic": {
+                "max": 20,
+                "cases": [
+                  { "when": { "all": [{ "check": "yesToForm" }, { "check": "noToPenuh" }] }, "points": 20 },
+                  { "when": { "any": [{ "check": "yesToForm" }, { "check": "noToPenuh" }] }, "points": 10 }
+                ],
+                "otherwise": 0
+              },
+              "constraint": {
+                "max": 15,
+                "cases": [{ "when": { "check": "checkedEarly" }, "points": 15 }],
+                "otherwise": 0
+              },
+              "edgeCase": {
+                "max": 10,
+                "cases": [
+                  { "when": { "all": [{ "check": "gagalBranch" }, { "check": "gagalRecovers" }, { "check": "penuhRecovers" }] }, "points": 10 },
+                  { "when": { "atLeast": 1, "of": [{ "check": "gagalBranch" }, { "check": "gagalRecovers" }, { "check": "penuhRecovers" }] }, "points": 5 }
+                ],
+                "otherwise": 0
+              },
+              "simplicity": { "max": 10, "orphans": { "floor": 4 } }
+            },
+            "tiers": [
+              {
+                "when": { "not": { "all": [{ "check": "hasBeranda" }, { "check": "hasBerhasil" }, { "check": "berandaToForm" }, { "check": "konfirmasiToBerhasil" }] } },
+                "tier": "needs-work",
+                "message": "Jalur utamanya belum lengkap. Pastikan ada jalan dari Beranda, lewat Form Pemesanan dan Konfirmasi, sampai Pemesanan Berhasil."
+              },
+              {
+                "when": { "not": { "all": [{ "check": "yesToForm" }, { "check": "noToPenuh" }] } },
+                "tier": "almost",
+                "message": "Hampir! Node Slot tersedia? perlu dua cabang: Ya lanjut ke Form Pemesanan, Tidak ke Slot Penuh."
+              },
+              {
+                "when": { "not": { "all": [{ "check": "gagalRecovers" }, { "check": "penuhRecovers" }] } },
+                "tier": "good",
+                "message": "Jalur utama dan cek slotnya sudah benar. Sekarang pastikan setiap kegagalan punya jalan kembali."
+              }
+            ],
+            "otherwise": { "tier": "great", "message": "Flow ini matang: slot dicek lebih awal, dan setiap kegagalan punya jalan kembali yang jelas." },
+            "notes": [
+              { "when": { "not": { "check": "berhasilTerminal" } }, "message": "Ingat, Pemesanan Berhasil adalah titik akhir, jadi tidak boleh ada panah yang keluar darinya." }
+            ]
+          },
+          "reflection": {
+            "prompt": "Kenapa kamu menyusun flow seperti ini?",
+            "placeholder": "Contoh: Saya mengecek slot sebelum formulir supaya Dimas tidak buang waktu...",
+            "required": false
+          }
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Uji Pemahaman",
+      "objective": "Uji konsep flow lewat berbagai jenis soal.",
+      "xp": 50,
+      "timeLimitMinutes": 15,
+      "checkMode": "instant",
+      "questions": [
+        {
+          "type": "matching",
+          "id": "jenis-node",
+          "prompt": "Pasangkan jenis node dengan contohnya di kasus ini.",
+          "items": [
+            { "label": "Layar", "pairs": [{ "text": "Daftar Ruang" }] },
+            { "label": "Keputusan", "pairs": [{ "text": "Slot tersedia?" }] },
+            { "label": "Gagal", "pairs": [{ "text": "Slot Penuh" }, { "text": "Gagal Menyimpan" }] }
+          ]
+        },
+        {
+          "type": "grouping",
+          "id": "jalur",
+          "prompt": "Kelompokkan node ke jalurnya.",
+          "groups": ["Jalur utama", "Jalur gagal"],
+          "items": [
+            { "text": "Form Pemesanan", "group": 0 },
+            { "text": "Konfirmasi", "group": 0 },
+            { "text": "Pemesanan Berhasil", "group": 0 },
+            { "text": "Slot Penuh", "group": 1 },
+            { "text": "Gagal Menyimpan", "group": 1 }
+          ]
+        },
+        {
+          "type": "wordblank",
+          "id": "istilah",
+          "prompt": "Tebak istilah untuk jalan kembali setelah gagal.",
+          "answerText": "Recovery",
+          "blankMode": "letter",
+          "blanks": [0, 2, 4, 6],
+          "hint": "Di kanvas, jalur ini digambar putus-putus berwarna emas."
+        },
+        {
+          "type": "oddoneout",
+          "id": "beda",
+          "prompt": "Mana yang bukan layar?",
+          "items": [{ "text": "Beranda" }, { "text": "Daftar Ruang" }, { "text": "Slot tersedia?" }, { "text": "Detail Ruang" }],
+          "odd": 2,
+          "feedback": {
+            "correct": "Tepat. *Slot tersedia?* adalah node keputusan.",
+            "incorrect": "Coba lihat mana yang berupa pertanyaan, bukan layar."
+          }
+        },
+        {
+          "type": "number",
+          "id": "cabang",
+          "prompt": "Berapa minimal cabang yang harus dimiliki node keputusan?",
+          "answer": 2,
+          "unit": "cabang"
+        },
+        {
+          "type": "range",
+          "id": "durasi",
+          "prompt": "Satu slot ruang belajar berdurasi berapa menit?",
+          "help": "Lihat lagi deskripsi kasusnya.",
+          "min": 30,
+          "max": 240,
+          "step": 30,
+          "answer": 120
+        },
+        {
+          "type": "hotspot",
+          "id": "tombol",
+          "prompt": "Klik tombol yang dipakai Dimas untuk mulai memesan.",
+          "image": { "kind": "image", "url": "/cases/ruang-belajar/detail-ruang.svg", "alt": "Layar Detail Ruang dengan tombol Lihat Jadwal Lain dan Pesan Sekarang" },
+          "spots": [{ "x": 50, "y": 86, "radius": 12, "label": "Pesan Sekarang" }]
+        },
+        {
+          "type": "branching",
+          "id": "cerita",
+          "prompt": "Dimas mendapat pesan \"Slot Penuh\". Apa yang sebaiknya dilakukan aplikasi?",
+          "start": "s",
+          "nodes": [
+            {
+              "id": "s",
+              "text": "Slot pukul 13.00 di Ruang Belajar 2 sudah penuh. Aplikasi perlu menentukan langkah berikutnya.",
+              "choices": [
+                { "text": "Tampilkan pesan error saja", "target": "buntu" },
+                { "text": "Tawarkan ruang lain di jam yang sama", "target": "ruang-lain", "correct": true }
+              ]
+            },
+            {
+              "id": "ruang-lain",
+              "text": "Ruang Belajar 4 kosong pukul 13.00. Dimas memilihnya.",
+              "choices": [
+                { "text": "Minta Dimas mengulang dari Beranda", "target": "ulang" },
+                { "text": "Langsung buka Form Pemesanan untuk Ruang Belajar 4", "target": "berhasil", "correct": true }
+              ]
+            },
+            { "id": "buntu", "text": "Dimas bingung harus apa dan menutup aplikasi.", "ending": true, "endingLabel": "Dimas menyerah" },
+            { "id": "ulang", "text": "Dimas harus memilih ruang dari awal lagi. Merepotkan, tapi akhirnya berhasil.", "ending": true, "endingLabel": "Berhasil, tapi repot" },
+            { "id": "berhasil", "text": "Dimas mengisi formulir dan pemesanannya berhasil.", "ending": true, "endingLabel": "Pemesanan berhasil" }
+          ]
+        }
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "key": "cek-awal",
+      "title": "Cek Ketersediaan Lebih Awal",
+      "time": "10 menit",
+      "color": "#0F9D8A",
+      "tagline": "Semakin awal pengecekan, semakin sedikit waktu pengguna yang terbuang.",
+      "coba": [
+        {
+          "type": "mcq",
+          "q": "Kapan sebaiknya aplikasi mengecek apakah slot masih tersedia?",
+          "options": [
+            { "t": "Setelah Dimas mengisi formulir", "fb": "Kalau ternyata penuh, Dimas sudah repot mengisi formulir." },
+            { "t": "Di Detail Ruang, sebelum formulir", "ok": true, "fb": "Tepat. Dimas langsung tahu sebelum repot mengisi apa pun." },
+            { "t": "Tidak perlu dicek", "fb": "Tanpa pengecekan, pemesanan ganda bisa terjadi." }
+          ]
+        }
+      ],
+      "penjelasan": [
+        {
+          "type": "text",
+          "md": "Pengecekan yang bisa dilakukan lebih awal sebaiknya **dilakukan lebih awal**. Kalau slot penuh, pengguna diarahkan kembali memilih ruang lain, bukan ke formulir.\n\n- Cek slot di **Detail Ruang**, sebelum Form Pemesanan.\n- Kalau penuh, kembalikan ke **Daftar Ruang**."
+        },
+        { "type": "rule", "text": "Kalau sebuah syarat bisa dicek sebelum pengguna repot, cek sebelum pengguna repot." },
+        {
+          "type": "flows",
+          "items": [
+            { "title": "Contoh cek slot lebih awal", "flow": { "start": "daftarruang", "edges": ["daftarruang>detailruang", "detailruang>cekslot", "cekslot>formpesan:Y", "cekslot>penuh:N", "penuh>daftarruang:R"] } }
+          ]
+        }
+      ],
+      "latihan": [
+        {
+          "type": "fixer",
+          "title": "Pindahkan cek slot",
+          "intro": "Nyalakan dan matikan sambungan sampai semua aturan terpenuhi.",
+          "nodes": ["daftarruang", "detailruang", "cekslot", "formpesan", "penuh"],
+          "start": "daftarruang",
+          "initial": ["daftarruang>detailruang", "detailruang>formpesan", "formpesan>cekslot", "cekslot>penuh:N"],
+          "extra": ["detailruang>cekslot", "cekslot>formpesan:Y", "penuh>daftarruang:R", "penuh>formpesan:R"],
+          "rules": ["connected", "twoSides:cekslot", "before:cekslot:formpesan", "recovery:penuh:daftarruang", "not:penuh>formpesan:R"],
+          "solution": ["daftarruang>detailruang", "detailruang>cekslot", "cekslot>formpesan:Y", "cekslot>penuh:N", "penuh>daftarruang:R"]
+        },
+        { "type": "write", "q": "Di aplikasi lain yang kamu pakai, pengecekan apa yang menurutmu datang terlambat?", "placeholder": "Contoh: aplikasi tiket baru bilang kursi habis setelah saya mengisi data..." }
+      ]
+    }
+  ],
+  "practiceClosing": {
+    "title": "Sebelum mengirim flow pemesanan",
+    "intro": "Cek empat hal ini sebelum menekan **Kirim**.",
+    "checklist": [
+      "Flow dimulai dari Beranda dan berakhir di Pemesanan Berhasil",
+      "Slot dicek di Detail Ruang, sebelum Form Pemesanan",
+      "Slot tersedia? punya cabang Ya dan Tidak",
+      "Slot Penuh dan Gagal Menyimpan punya jalan kembali"
+    ]
+  }
+}

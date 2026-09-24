@@ -14,6 +14,9 @@ export default async function LatihanPage() {
   return (
     <PracticeWorkbook
       plan={practice.plan}
+      modules={practice.modules}
+      nodes={practice.nodes}
+      closing={practice.closing}
       initialCompleted={practice.completedParts}
       initialAnswers={practice.answers}
       mode="participant"

@@ -1,4 +1,4 @@
-import { nodeLabel, nodeType } from "@/lib/practice/content";
+import type { NodeDictionary } from "@/lib/practice/nodes";
 
 /**
  * Rule checker for the Modul Latihan flow fixer ("Flexible Answer Model"):
@@ -30,9 +30,9 @@ export function parseEdge(s: string): PracticeEdge {
   return { f, t, k: k as EdgeKind, key: s };
 }
 
-export function edgeText(e: PracticeEdge): string {
-  if (e.k === "R") return `${nodeLabel(e.f)} ⟲ ${nodeLabel(e.t)}`;
-  return `${nodeLabel(e.f)} → ${nodeLabel(e.t)}`;
+export function edgeText(e: PracticeEdge, dict: NodeDictionary): string {
+  if (e.k === "R") return `${dict.label(e.f)} ⟲ ${dict.label(e.t)}`;
+  return `${dict.label(e.f)} → ${dict.label(e.t)}`;
 }
 
 /** Forward reachability (recovery edges ignored); `skip` is a node the path may not pass through. */
@@ -63,9 +63,9 @@ export function isKnownRule(spec: string): boolean {
   return (RULE_NAMES as readonly string[]).includes(name);
 }
 
-export function checkRule(spec: string, nodes: string[], edges: PracticeEdge[], start: string): RuleResult {
+export function checkRule(spec: string, nodes: string[], edges: PracticeEdge[], start: string, dict: NodeDictionary): RuleResult {
   const [name, a, b] = spec.split(":");
-  const L = nodeLabel;
+  const L = dict.label;
   switch (name) {
     case "connected":
       return { label: "Semua node tersambung", pass: nodes.every((n) => edges.some((e) => e.f === n || e.t === n)) };
@@ -77,7 +77,7 @@ export function checkRule(spec: string, nodes: string[], edges: PracticeEdge[], 
       return { label: `${L(a)} dilewati sebelum ${L(b)}`, pass: reach(edges, start, b) && !reach(edges, start, b, a) };
     case "branch": {
       const incoming = edges.filter((e) => e.t === a && e.k !== "R");
-      const fromOutcome = incoming.some((e) => nodeType(e.f) === "outcome");
+      const fromOutcome = incoming.some((e) => dict.type(e.f) === "outcome");
       return { label: `${L(a)} muncul sebagai cabang gagal, bukan setelah hasil akhir`, pass: incoming.length > 0 && !fromOutcome };
     }
     case "twoSides": {
@@ -100,7 +100,7 @@ export function checkRule(spec: string, nodes: string[], edges: PracticeEdge[], 
 }
 
 /** Checks every rule against the edges that are currently switched on. */
-export function checkRules(rules: string[], nodes: string[], edgeKeys: string[], start: string): RuleResult[] {
+export function checkRules(rules: string[], nodes: string[], edgeKeys: string[], start: string, dict: NodeDictionary): RuleResult[] {
   const edges = edgeKeys.map(parseEdge);
-  return rules.map((r) => checkRule(r, nodes, edges, start));
+  return rules.map((r) => checkRule(r, nodes, edges, start, dict));
 }

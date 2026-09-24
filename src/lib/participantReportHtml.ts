@@ -4,10 +4,10 @@ import { buildFlowGraph, escapeHtml, flowGraphToSvg, EDGE_COLOR, LEGEND_LABEL } 
 /**
  * One participant's complete answers as a single self-contained HTML file.
  *
- * HTML rather than CSV because the quest 2-5 answers are graphs, not values: a
+ * HTML rather than CSV because the flow answers are graphs, not values: a
  * spreadsheet cell can only hold the flattened "A -> B -> C" reading, which
- * drops exactly the branching (the Verifikasi NIS decision, its Ya/Tidak
- * outcomes, the recovery path) a grader needs to see. The diagrams are
+ * drops exactly the branching (decisions, their Ya/Tidak outcomes, recovery
+ * paths) a grader needs to see. The diagrams are
  * embedded as inline SVG, so the file needs no network access, stays sharp at
  * any zoom, and prints straight to PDF. The flattened ordering is written
  * underneath each diagram too, so the file is still searchable as text — and
@@ -28,48 +28,44 @@ export function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "peserta";
 }
 
-function questSection(q: ParticipantReport["flowQuests"][number], nativeViewMode: ParticipantReport["flowViewMode"]) {
-  const head = `<div class="row"><h2>Quest ${q.order} · ${escapeHtml(q.title)}</h2><span class="meta">Waktu: ${fmtSeconds(
-    q.timeSpentSeconds
-  )} · Ke aksi pertama: ${fmtSeconds(q.timeToFirstActionSeconds)} · Revisi: ${q.revisionCount}×</span></div>`;
+function questSection(q: ParticipantReport["quests"][number], nativeViewMode: ParticipantReport["flowViewMode"]) {
+  const flowMeta = q.flow ? ` · Ke aksi pertama: ${fmtSeconds(q.flow.timeToFirstActionSeconds)} · Revisi: ${q.flow.revisionCount}×` : "";
+  const head = `<div class="row"><h2>Quest ${q.order} · ${escapeHtml(q.title)}</h2><span class="meta">Waktu: ${fmtSeconds(q.timeSpentSeconds)}${flowMeta}</span></div>`;
 
   if (q.status === null) {
     return `<section class="card">${head}<p class="muted">Belum dimulai.</p></section>`;
   }
 
-  const score = `<p class="score">Skor: <b>${
-    q.totalScore !== null ? `${q.totalScore} / ${q.maxScore}` : "Belum dinilai"
-  }</b> <span class="muted">(${escapeHtml(q.status)})</span></p>`;
+  const quiz = q.quiz
+    .map((a) => {
+      const ok = a.total > 0 && a.correct === a.total;
+      const verdict = !a.answered
+        ? `<span class="muted">— Belum dijawab</span>`
+        : `<span class="${ok ? "ok" : "bad"}">${ok ? "✓ Benar" : `${a.correct}/${a.total} benar`}</span>`;
+      const answer = a.answered ? ` — <span class="muted">Jawaban: “${escapeHtml(a.answerText)}”</span>` : "";
+      const key = a.answered && !ok ? `<br /><span class="muted">Kunci: ${escapeHtml(a.correctText)}</span>` : "";
+      return `<p>${verdict} ${escapeHtml(a.prompt)}${answer}${key}</p>`;
+    })
+    .join("");
 
-  const graph = buildFlowGraph(q.graph.nodes, q.graph.connections, nativeViewMode, nativeViewMode);
-  const diagram = graph
-    ? `<div class="canvas">${flowGraphToSvg(graph, `q${q.order}`)}</div>` +
-      `<p class="legend">${graph.usedKinds
-        .map((k) => `<span><i style="background:${EDGE_COLOR[k]}"></i>${LEGEND_LABEL[k]}</span>`)
-        .join("")}</p>`
-    : `<p class="muted">Belum ada node.</p>`;
+  let flow = "";
+  if (q.flow) {
+    const f = q.flow;
+    const score = `<p class="score">Skor flow: <b>${f.totalScore !== null ? `${f.totalScore} / ${f.maxScore}` : "Belum dinilai"}</b> <span class="muted">(${escapeHtml(q.status)})</span></p>`;
+    const graph = buildFlowGraph(f.graph.nodes, f.graph.connections, nativeViewMode, nativeViewMode);
+    const diagram = graph
+      ? `<div class="canvas">${flowGraphToSvg(graph, `q${q.order}`)}</div>` +
+        `<p class="legend">${graph.usedKinds.map((k) => `<span><i style="background:${EDGE_COLOR[k]}"></i>${LEGEND_LABEL[k]}</span>`).join("")}</p>`
+      : `<p class="muted">Belum ada node.</p>`;
+    const steps = f.flowSteps.length ? `<p class="steps">Urutan node: ${f.flowSteps.map((x) => escapeHtml(x)).join(" → ")}</p>` : "";
+    const reflection = f.reflection ? `<p class="quote">“${escapeHtml(f.reflection)}”</p>` : "";
+    flow = `${score}${diagram}${steps}${reflection}`;
+  }
 
-  const steps = q.flowSteps.length
-    ? `<p class="steps">Urutan node: ${q.flowSteps.map((s) => escapeHtml(s)).join(" → ")}</p>`
-    : "";
-  const reflection = q.reflection ? `<p class="quote">“${escapeHtml(q.reflection)}”</p>` : "";
-
-  return `<section class="card">${head}${score}${diagram}${steps}${reflection}</section>`;
+  return `<section class="card">${head}${quiz}${flow}</section>`;
 }
 
 export function buildParticipantReportHtml(report: ParticipantReport, sessionTitle: string, sessionCode: string) {
-  const quest1 = report.quest1
-    ? `<section class="card"><div class="row"><h2>Quest 1 · ${escapeHtml(
-        report.quest1.title
-      )}</h2><span class="meta">Waktu: ${fmtSeconds(report.quest1.timeSpentSeconds)}</span></div>${
-        report.quest1.completed
-          ? `<p><span class="${report.quest1.correct ? "ok" : "bad"}">${
-              report.quest1.correct ? "✓ Benar" : "✗ Salah"
-            }</span> — <span class="muted">Jawaban: “${escapeHtml(report.quest1.selectedText ?? "—")}”</span></p>`
-          : `<p class="muted">Belum diselesaikan.</p>`
-      }</section>`
-    : "";
-
   const focus = report.focusLoss.events.length
     ? `<section class="card warn"><h2>Riwayat Berpindah Tab/Window</h2><table>${report.focusLoss.events
         .map(
@@ -128,8 +124,7 @@ footer{color:var(--muted2);font-size:11.5px;margin-top:28px}
   )}</b><span>Total Waktu Pergi</span></div>
 </div>
 ${focus}
-${quest1}
-${report.flowQuests.map((q) => questSection(q, report.flowViewMode)).join("")}
+${report.quests.map((q) => questSection(q, report.flowViewMode)).join("")}
 <footer>Diagram digambar dalam orientasi ${
     report.flowViewMode === "HORIZONTAL" ? "horizontal" : "vertikal"
   } — sama seperti yang dipakai peserta saat menyusun flow-nya.</footer>

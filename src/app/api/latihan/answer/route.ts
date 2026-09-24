@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
   const { practice } = access;
-  if (widgetForAnswerKey(practice.plan.content, parsed.data.key)?.type !== "write") {
+  if (widgetForAnswerKey(practice.plan.content, parsed.data.key, practice.modules)?.type !== "write") {
     return NextResponse.json({ error: "Unknown question" }, { status: 400 });
   }
 

@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { flushSync } from "react-dom";
-import { MODULES } from "@/lib/practice/content";
 import { MAIN_PART, answerKey, planParts, type ResolvedPlan, type WidgetStage } from "@/lib/practice/plan";
-import type { MainExercise, ModuleKey, Widget } from "@/lib/practice/schema";
-import { PracticeWidget, cx, initialWidgetStatus, type WidgetStatus } from "./widgets";
+import type { MainExercise } from "@/lib/practice/schema";
+import { nodeDictionary } from "@/lib/practice/nodes";
+import type { CaseNode, ModuleContent, PracticeClosing } from "@/lib/content/case";
+import { PracticeWidget, cx, initialWidgetStatus, type Widget, type WidgetStatus } from "./widgets";
+import { PracticeNodesProvider, usePracticeNodes } from "./nodesContext";
+import { RichText } from "@/components/RichText";
 import s from "./practice.module.css";
 
 /**
@@ -50,16 +53,28 @@ function jumpTo(e: MouseEvent<HTMLAnchorElement>, anchor: string) {
 
 export function PracticeWorkbook({
   plan,
+  modules,
+  nodes,
+  closing,
   initialCompleted,
   initialAnswers,
   mode,
 }: {
   plan: ResolvedPlan;
+  /** The case's modules; the plan picks which of them this page shows, and in what order. */
+  modules: ModuleContent[];
+  /** The case's node library, which every diagram and fixer on the page names its nodes from. */
+  nodes: CaseNode[];
+  /** The case's closing checklist, shown after the last part. */
+  closing?: PracticeClosing;
   initialCompleted: string[];
   initialAnswers: Record<string, string>;
   mode: Mode;
 }) {
   const { content } = plan;
+  const dict = useMemo(() => nodeDictionary(nodes), [nodes]);
+  const moduleByKey = useMemo(() => new Map(modules.map((m) => [m.key, m])), [modules]);
+  const planModules = content.modules.flatMap((k) => moduleByKey.get(k) ?? []);
   const [completed, setCompleted] = useState<string[]>(initialCompleted);
   const [answers, setAnswers] = useState(initialAnswers);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,11 +84,11 @@ export function PracticeWorkbook({
   const mainRef = useRef<HTMLElement>(null);
 
   const steps: Step[] = [
-    ...content.modules.map((k, i) => ({
-      key: k,
-      anchor: `modul-${k}`,
-      label: MODULES[k].title,
-      meta: `Modul ${i + 1}, ${MODULES[k].time}`,
+    ...planModules.map((m, i) => ({
+      key: m.key,
+      anchor: `modul-${m.key}`,
+      label: m.title,
+      meta: `Modul ${i + 1}, ${m.time}`,
       num: String(i + 1),
     })),
     ...(content.main ? [{ key: MAIN_PART, anchor: "latihan-utama", label: content.main.title, meta: "Latihan utama", num: "★" }] : []),
@@ -138,6 +153,7 @@ export function PracticeWorkbook({
   );
 
   return (
+    <PracticeNodesProvider value={dict}>
     <div className={s.root}>
       <div className={s.shell}>
         <nav className={s.path} aria-label="Jalur belajar">
@@ -146,7 +162,7 @@ export function PracticeWorkbook({
           <ol className={s.pathList}>
             {pathItem("mulai", "•", "Mulai di sini", false)}
             {steps.map((st) => pathItem(st.anchor, st.num, st.label, completed.includes(st.key), st.meta))}
-            {pathItem("selesai", "✓", "Selesai", false)}
+            {closing ? pathItem("selesai", "✓", "Selesai", false) : null}
           </ol>
           <div className={s.pathProgress}>{`${doneCount} dari ${parts.length} bagian selesai`}</div>
           <div className={s.pathBar}>
@@ -189,13 +205,13 @@ export function PracticeWorkbook({
             </div>
           </section>
 
-          {content.modules.map((k, i) => (
+          {planModules.map((m, i) => (
             <ModuleSection
-              key={k}
-              moduleKey={k}
+              key={m.key}
+              module={m}
               index={i}
-              done={completed.includes(k)}
-              onDone={() => markDone(k)}
+              done={completed.includes(m.key)}
+              onDone={() => markDone(m.key)}
               answers={answers}
               onSaveAnswer={saveAnswer}
             />
@@ -211,21 +227,22 @@ export function PracticeWorkbook({
             />
           ) : null}
 
-          <section className={cx(s.section, s.prose)} id="selesai">
-            <h2 className={s.finishTitle}>Sebelum mengirim flow berikutnya</h2>
-            <p>Simpan lima pertanyaan ini. Cukup satu menit sebelum menekan Kirim.</p>
-            <ol className={s.checklist}>
-              <li>Semua node sudah tersambung</li>
-              <li>Flow dimulai dari titik masuk dan berakhir di Success</li>
-              <li>Success tidak punya panah keluar</li>
-              <li>Setiap node keputusan punya cabang Ya dan Tidak</li>
-              <li>Setiap Error punya jalan kembali</li>
-            </ol>
-            <p>Kalau ada bagian yang masih membingungkan, tanyakan di grup PKL. Pertanyaanmu mungkin juga pertanyaan teman yang lain.</p>
-          </section>
+          {closing ? (
+            <section className={cx(s.section, s.prose)} id="selesai">
+              <h2 className={s.finishTitle}>{closing.title}</h2>
+              {closing.intro ? <RichText source={closing.intro} /> : null}
+              <ol className={s.checklist}>
+                {closing.checklist.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ol>
+              {closing.outro ? <RichText source={closing.outro} /> : null}
+            </section>
+          ) : null}
         </main>
       </div>
     </div>
+    </PracticeNodesProvider>
   );
 }
 
@@ -255,8 +272,9 @@ function WidgetGroup({
   onSaveAnswer: SectionProps["onSaveAnswer"];
   onChange?: (statuses: WidgetStatus[]) => void;
 }) {
+  const dict = usePracticeNodes();
   const [statuses, setStatuses] = useState(() =>
-    widgets.map((w, i) => initialWidgetStatus(w, stage === "penjelasan" ? undefined : answers[answerKey(part, stage, i)]))
+    widgets.map((w, i) => initialWidgetStatus(w, dict, stage === "penjelasan" ? undefined : answers[answerKey(part, stage, i)]))
   );
 
   function report(i: number, status: WidgetStatus) {
@@ -278,10 +296,11 @@ function WidgetGroup({
   });
 }
 
-function ModuleSection({ moduleKey, index, done, onDone, answers, onSaveAnswer }: SectionProps & { moduleKey: ModuleKey; index: number }) {
-  const m = MODULES[moduleKey];
+function ModuleSection({ module: m, index, done, onDone, answers, onSaveAnswer }: SectionProps & { module: ModuleContent; index: number }) {
+  const moduleKey = m.key;
+  const dict = usePracticeNodes();
   const [cobaReady, setCobaReady] = useState(() =>
-    m.coba.every((w, i) => initialWidgetStatus(w, answers[answerKey(moduleKey, "coba", i)]).attempted)
+    m.coba.every((w, i) => initialWidgetStatus(w, dict, answers[answerKey(moduleKey, "coba", i)]).attempted)
   );
   // A module finished on an earlier visit opens with everything already revealed.
   const [revealed, setRevealed] = useState(done);

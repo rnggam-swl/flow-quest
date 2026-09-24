@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getManagedSession } from "@/lib/managedSession";
 import { prisma } from "@/lib/prisma";
-import { MODULES } from "@/lib/practice/content";
+import { getSessionContent } from "@/lib/content/sessionContent";
 import { planParts, resolvePlan } from "@/lib/practice/plan";
 import { readAnswers } from "@/lib/practice/practiceData";
 import { Eyebrow, Headline, StatusPill, Sub } from "@/components/ui";
@@ -16,6 +16,16 @@ export default async function AdminPracticeHubPage() {
     );
   }
 
+  const content = (await getSessionContent(session.id))?.content;
+  if (!content) {
+    return (
+      <div className="mx-auto max-w-[1080px] px-6 pt-9 pb-20">
+        <p className="text-muted">Session yang dikelola belum punya konten kasus.</p>
+      </div>
+    );
+  }
+  const titleOf = new Map(content.modules.map((m) => [m.key, m.title]));
+
   const participants = await prisma.sessionParticipant.findMany({
     where: { sessionId: session.id },
     include: { User: true, PracticePlan: true },
@@ -23,18 +33,18 @@ export default async function AdminPracticeHubPage() {
   });
 
   const cards = participants.map((p) => {
-    const plan = resolvePlan(p.PracticePlan?.content, p.User.displayName);
+    const plan = resolvePlan(p.PracticePlan?.content, p.User.displayName, content.modules);
     const parts = planParts(plan.content);
     return {
       id: p.id,
       name: p.User.displayName,
       personal: plan.personal,
-      modules: plan.content.modules.map((k) => MODULES[k].title),
+      modules: plan.content.modules.map((k) => titleOf.get(k) ?? k),
       mainTitle: plan.content.main?.title ?? null,
       total: parts.length,
       done: parts.filter((part) => p.PracticePlan?.completedParts.includes(part)).length,
       answerCount: Object.keys(readAnswers(p.PracticePlan?.answers)).length,
-      // Quest 5 is the last to unlock, so a finished (or timed-out) enrollment means every quest is done.
+      // The last quest is the last to unlock, so a finished (or timed-out) enrollment means every quest is done.
       unlocked: p.status === "COMPLETED" || p.status === "TIME_EXPIRED",
     };
   });
@@ -45,7 +55,7 @@ export default async function AdminPracticeHubPage() {
       <Headline>Jalur Belajar Peserta</Headline>
       <Sub>
         Lanjutan dari User Flow Quest. Setiap peserta punya jalur belajar sendiri: modul yang relevan dengan celahnya,
-        ditambah latihan memperbaiki flow miliknya dari quest kemarin. Modul terbuka untuk peserta setelah kelima quest
+        ditambah latihan memperbaiki flow miliknya dari quest kemarin. Modul terbuka untuk peserta setelah semua quest
         selesai. ·{" "}
         <Link href="/admin/latihan/semua" className="text-teal underline">
           Buka semua modul dalam satu halaman →
@@ -75,7 +85,7 @@ export default async function AdminPracticeHubPage() {
                 ? c.mainTitle
                   ? `Latihan utama: ${c.mainTitle}`
                   : "Rencana personal tanpa latihan utama"
-                : "Belum ada rencana personal, peserta melihat keenam modul"}
+                : "Belum ada rencana personal, peserta melihat semua modul"}
             </div>
             <div className="mt-auto pt-1">
               <div className="mb-1 flex justify-between text-[12px] text-muted2">

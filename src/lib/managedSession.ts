@@ -1,27 +1,26 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { SCENARIO_TITLE } from "@/lib/constants";
+import { caseContentSchema } from "@/lib/content/case";
 
 /**
- * The workshop Session this app currently manages/plays: the most recently
- * created one under our scenario. Every admin page (dashboard, settings,
- * participants) operates on this one. Creating a new session (see
- * createNewSession) makes it the new managed session going forward, which is
- * how the admin starts a new batch without touching old data.
+ * The workshop Session the admin pages manage: the most recently created one
+ * that runs a case (is pinned to a ScenarioVersion). Creating a new session
+ * (see createNewSession) makes it the managed one, which is how the admin
+ * starts a new batch without touching old data.
  */
 export async function getManagedSession() {
   return prisma.session.findFirst({
-    where: { SessionQuest: { some: { Quest: { Scenario: { title: SCENARIO_TITLE } } } } },
+    where: { scenarioVersionId: { not: null } },
     orderBy: { createdAt: "desc" },
   });
 }
 
-/** All sessions ever created under our scenario, newest first — for the admin's session history list. */
+/** Every session that runs a case, newest first — for the admin's session history list. */
 export async function listAllSessions() {
   const sessions = await prisma.session.findMany({
-    where: { SessionQuest: { some: { Quest: { Scenario: { title: SCENARIO_TITLE } } } } },
+    where: { scenarioVersionId: { not: null } },
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { SessionParticipant: true } } },
+    include: { _count: { select: { SessionParticipant: true } }, ScenarioVersion: { include: { Scenario: true } } },
   });
   return sessions.map((s) => ({
     id: s.id,
@@ -30,42 +29,54 @@ export async function listAllSessions() {
     status: s.status,
     createdAt: s.createdAt,
     participantCount: s._count.SessionParticipant,
+    caseTitle: s.ScenarioVersion?.Scenario.title ?? "—",
+    caseVersion: s.ScenarioVersion?.version ?? null,
   }));
 }
 
+/** Cases a new session can run: every case with a published version, and its latest one. */
+export async function listPlayableCases() {
+  const scenarios = await prisma.scenario.findMany({
+    where: { ScenarioVersion: { some: { status: "PUBLISHED" } } },
+    include: { ScenarioVersion: { where: { status: "PUBLISHED" }, orderBy: { version: "desc" }, take: 1 } },
+    orderBy: { title: "asc" },
+  });
+  return scenarios.map((s) => ({ id: s.id, title: s.title, version: s.ScenarioVersion[0].version }));
+}
+
 /**
- * Creates a brand-new Session (a new batch/class) linked to the same 5
- * quests under our scenario, leaving every prior session's data untouched.
- * It automatically becomes the managed session (most recently created).
+ * Creates a brand-new Session (a new batch/class) running the latest
+ * published version of a case, pinned so later edits to the case never
+ * change it. Leaves every prior session's data untouched, and becomes the
+ * managed session (most recently created).
  */
-export async function createNewSession(params: { title: string; sessionCode: string; createdBy: string }) {
-  const quests = await prisma.quest.findMany({
-    where: { Scenario: { title: SCENARIO_TITLE } },
-    orderBy: { order: "asc" },
+export async function createNewSession(params: { title: string; sessionCode: string; createdBy: string; scenarioId: string }) {
+  const version = await prisma.scenarioVersion.findFirst({
+    where: { scenarioId: params.scenarioId, status: "PUBLISHED" },
+    orderBy: { version: "desc" },
   });
-  if (quests.length === 0) throw new Error("No quests found under the managed scenario");
+  if (!version) throw new Error("This case has no published version");
+  const content = caseContentSchema.parse(version.content);
+  const questRows = await prisma.quest.findMany({ where: { scenarioId: params.scenarioId } });
+  const questIdByOrder = new Map(questRows.map((q) => [q.order, q.id]));
+  const missing = content.quests.filter((q) => !questIdByOrder.has(q.order));
+  if (missing.length) throw new Error(`Quest rows missing for order(s) ${missing.map((q) => q.order).join(", ")} — re-import the case`);
 
-  const session = await prisma.session.create({
-    data: {
-      id: crypto.randomUUID(),
-      title: params.title,
-      sessionCode: params.sessionCode,
-      status: "DRAFT",
-      timeLimitMinutes: 60,
-      createdBy: params.createdBy,
-    },
-  });
-
-  for (const quest of quests) {
-    await prisma.sessionQuest.create({
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.session.create({
       data: {
         id: crypto.randomUUID(),
-        sessionId: session.id,
-        questId: quest.id,
-        order: quest.order,
+        title: params.title,
+        sessionCode: params.sessionCode,
+        status: "DRAFT",
+        timeLimitMinutes: 60,
+        createdBy: params.createdBy,
+        scenarioVersionId: version.id,
       },
     });
-  }
-
-  return session;
+    await tx.sessionQuest.createMany({
+      data: content.quests.map((q) => ({ id: crypto.randomUUID(), sessionId: session.id, questId: questIdByOrder.get(q.order)!, order: q.order })),
+    });
+    return session;
+  });
 }

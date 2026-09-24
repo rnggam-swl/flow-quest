@@ -36,8 +36,9 @@ export async function PATCH(request: Request) {
     },
   });
 
+  // Per-session overrides (0 = no timer), so a timer change never touches other sessions of the same case.
   for (const [questId, minutes] of Object.entries(parsed.data.questTimeLimits)) {
-    await prisma.quest.update({ where: { id: questId }, data: { timeLimitMinutes: minutes } });
+    await prisma.sessionQuest.updateMany({ where: { sessionId: session.id, questId }, data: { timeLimitMinutes: minutes ?? 0 } });
   }
 
   return NextResponse.json({ ok: true });

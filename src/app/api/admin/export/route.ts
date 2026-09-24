@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getManagedSession } from "@/lib/managedSession";
 import { getSessionFullReport, type ParticipantReport } from "@/lib/adminReport";
+import { flowQuestionOf, getSessionContent, quizQuestionsOf } from "@/lib/content/sessionContent";
+import type { CaseContent } from "@/lib/content/case";
 
 function csvCell(value: unknown): string {
   const str = value === null || value === undefined ? "" : String(value);
@@ -13,8 +15,13 @@ function csvRow(values: unknown[]): string {
   return values.map(csvCell).join(",");
 }
 
-function buildCsv(reports: ParticipantReport[]) {
-  const flowOrders = [2, 3, 4, 5];
+/**
+ * One row per participant; the columns follow the session's case — for every
+ * quest its status and time, each quiz question's answer and score, and for a
+ * flow question its timing, revisions, score, flow and written reason.
+ */
+function buildCsv(reports: ParticipantReport[], content: CaseContent) {
+  const quests = [...content.quests].sort((a, b) => a.order - b.order);
   const header = [
     "Nama",
     "Email",
@@ -24,25 +31,26 @@ function buildCsv(reports: ParticipantReport[]) {
     "Total XP",
     "Jumlah Berpindah Tab",
     "Total Waktu Pergi (detik)",
-    "Q1 Waktu (detik)",
-    "Q1 Benar/Salah",
-    "Q1 Jawaban",
-    ...flowOrders.flatMap((o) => [
-      `Q${o} Status`,
-      `Q${o} Waktu (detik)`,
-      `Q${o} Waktu ke Aksi Pertama (detik)`,
-      `Q${o} Jumlah Revisi`,
-      `Q${o} Skor`,
-      `Q${o} Skor Maks`,
-      `Q${o} Flow`,
-      `Q${o} Refleksi`,
+    ...quests.flatMap((q) => [
+      `Q${q.order} Status`,
+      `Q${q.order} Waktu (detik)`,
+      ...quizQuestionsOf(q).flatMap((x) => [`Q${q.order} ${x.id} Jawaban`, `Q${q.order} ${x.id} Benar`]),
+      ...(flowQuestionOf(q)
+        ? [
+            `Q${q.order} Waktu ke Aksi Pertama (detik)`,
+            `Q${q.order} Jumlah Revisi`,
+            `Q${q.order} Skor`,
+            `Q${q.order} Skor Maks`,
+            `Q${q.order} Flow`,
+            `Q${q.order} Refleksi`,
+          ]
+        : []),
     ]),
   ];
 
   const lines = [csvRow(header)];
-
   for (const r of reports) {
-    const flowByOrder = new Map(r.flowQuests.map((q) => [q.order, q]));
+    const byOrder = new Map(r.quests.map((q) => [q.order, q]));
     const row: unknown[] = [
       r.displayName,
       r.email,
@@ -52,26 +60,28 @@ function buildCsv(reports: ParticipantReport[]) {
       r.totalXp,
       r.focusLoss.count,
       r.focusLoss.totalAwaySeconds,
-      r.quest1?.timeSpentSeconds ?? "",
-      r.quest1 ? (r.quest1.completed ? (r.quest1.correct ? "Benar" : "Salah") : "") : "",
-      r.quest1?.selectedText ?? "",
     ];
-    for (const o of flowOrders) {
-      const q = flowByOrder.get(o);
-      row.push(
-        q?.status ?? "",
-        q?.timeSpentSeconds ?? "",
-        q?.timeToFirstActionSeconds ?? "",
-        q?.revisionCount ?? "",
-        q?.totalScore ?? "",
-        q?.maxScore ?? "",
-        q?.flowSteps.join(" -> ") ?? "",
-        q?.reflection ?? ""
-      );
+    for (const q of quests) {
+      const report = byOrder.get(q.order);
+      row.push(report?.status ?? "", report?.timeSpentSeconds ?? "");
+      for (const x of quizQuestionsOf(q)) {
+        const a = report?.quiz.find((y) => y.questionId === x.id);
+        row.push(a?.answered ? a.answerText : "", a?.answered ? `${a.correct}/${a.total}` : "");
+      }
+      if (flowQuestionOf(q)) {
+        const f = report?.flow;
+        row.push(
+          f?.timeToFirstActionSeconds ?? "",
+          f?.revisionCount ?? "",
+          f?.totalScore ?? "",
+          f?.maxScore ?? "",
+          f?.flowSteps.join(" -> ") ?? "",
+          f?.reflection ?? ""
+        );
+      }
     }
     lines.push(csvRow(row));
   }
-
   return lines.join("\r\n");
 }
 
@@ -86,8 +96,12 @@ export async function GET() {
     return NextResponse.json({ error: "Belum ada session yang dikelola." }, { status: 404 });
   }
 
+  const content = (await getSessionContent(session.id))?.content;
+  if (!content) {
+    return NextResponse.json({ error: "Session ini belum punya konten kasus." }, { status: 404 });
+  }
   const reports = await getSessionFullReport(session.id);
-  const csv = "﻿" + buildCsv(reports);
+  const csv = "﻿" + buildCsv(reports, content);
   const filename = `aktivitas-${session.sessionCode}-${new Date().toISOString().slice(0, 10)}.csv`;
 
   return new NextResponse(csv, {

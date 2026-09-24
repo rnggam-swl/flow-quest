@@ -8,9 +8,6 @@ import { EDGE_PATTERN } from "@/lib/practice/flowRules";
  * prisma/seed-practice-plans.ts.
  */
 
-export const MODULE_KEYS = ["A", "B", "C", "D", "E", "F"] as const;
-export type ModuleKey = (typeof MODULE_KEYS)[number];
-
 const edge = z.string().regex(EDGE_PATTERN, 'Edge harus berformat "dari>ke" atau "dari>ke:Y|N|R"');
 
 const flowSpec = z.object({
@@ -109,9 +106,8 @@ const fixerWidget = z.object({
 export type FixerWidget = z.infer<typeof fixerWidget>;
 
 /**
- * Every widget type a stored plan may use. Deliberately excludes "text":
- * that one renders raw HTML, so it's only allowed in the static module
- * content that ships with the code, never in data read from the database.
+ * Every widget type a participant's "latihan utama" may use. Module content
+ * (see moduleWidgetSchema in src/lib/content/case.ts) adds markdown "text" on top.
  */
 export const planWidgetSchema = z.discriminatedUnion("type", [
   ruleWidget,
@@ -128,24 +124,6 @@ export const planWidgetSchema = z.discriminatedUnion("type", [
 ]);
 export type PlanWidget = z.infer<typeof planWidgetSchema>;
 
-/** Trusted, code-authored prose. Only ever appears in content.ts. */
-export interface TextWidget {
-  type: "text";
-  html: string;
-}
-
-export type Widget = PlanWidget | TextWidget;
-
-export interface PracticeModule {
-  title: string;
-  time: string;
-  color: string;
-  tagline: string;
-  coba: Widget[];
-  penjelasan: Widget[];
-  latihan: Widget[];
-}
-
 const mainExerciseSchema = z.object({
   title: z.string(),
   intro: z.string(),
@@ -161,7 +139,8 @@ export const practicePlanContentSchema = z.object({
   first: z.string().nullish(),
   strengths: z.array(z.string()).default([]),
   intro: z.string(),
-  modules: z.array(z.enum(MODULE_KEYS)),
+  /** Keys of the case's modules, in the order the participant should take them. */
+  modules: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i)),
   main: mainExerciseSchema.nullish(),
 });
 export type PracticePlanContent = z.infer<typeof practicePlanContentSchema>;

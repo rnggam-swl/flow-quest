@@ -7,8 +7,9 @@
  *
  * A file names one session by its code and lists plans matched to that
  * session's participants by display name (or by email, when given). Every
- * plan is validated up front — schema, plus findPlanProblems, which among
- * other things replays each fixer's model solution against its own rules —
+ * plan is validated up front against the case that session runs — its
+ * modules must exist, its fixers must use the case's nodes, and each fixer's
+ * model solution must satisfy its own rules —
  * and nothing is written unless all of them pass and each one resolves to
  * exactly one participant. Re-running is safe: it replaces a plan's content
  * but keeps the participant's progress and saved answers.
@@ -21,6 +22,7 @@ import { z } from "zod";
 import { prisma } from "../src/lib/prisma";
 import { practicePlanContentSchema } from "../src/lib/practice/schema";
 import { findPlanProblems } from "../src/lib/practice/plan";
+import { caseContentSchema } from "../src/lib/content/case";
 
 const fileSchema = z.object({
   sessionCode: z.string(),
@@ -46,13 +48,16 @@ async function main() {
 
   const session = await prisma.session.findUnique({
     where: { sessionCode },
-    include: { SessionParticipant: { include: { User: true } } },
+    include: { SessionParticipant: { include: { User: true } }, ScenarioVersion: true },
   });
   if (!session) throw new Error(`Session ${sessionCode} not found`);
+  if (!session.ScenarioVersion) throw new Error(`Session ${sessionCode} has no case content to check the plans against`);
+  // Plans reference the modules and nodes of the case this session runs.
+  const caseContent = caseContentSchema.parse(session.ScenarioVersion.content);
 
   const problems: string[] = [];
   const targets = plans.map((plan) => {
-    problems.push(...findPlanProblems(plan).map((p) => `${plan.participant}: ${p}`));
+    problems.push(...findPlanProblems(plan, caseContent).map((p) => `${plan.participant}: ${p}`));
     const matches = session.SessionParticipant.filter((sp) =>
       plan.email ? normalize(sp.User.email) === normalize(plan.email) : normalize(sp.User.displayName) === normalize(plan.participant)
     );

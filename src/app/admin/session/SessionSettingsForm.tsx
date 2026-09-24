@@ -108,7 +108,8 @@ export function SessionSettingsForm({
         </div>
       </Field>
 
-      <div className="mb-2 mt-6 text-[13px] font-semibold text-muted">Batas Waktu per Quest</div>
+      <div className="mb-1 mt-6 text-[13px] font-semibold text-muted">Batas Waktu per Quest</div>
+      <div className="mb-2 text-[12px] text-muted2">Berlaku untuk session ini saja. Kosongkan untuk quest tanpa timer.</div>
       <div className="mb-5 flex flex-col gap-2">
         {quests.map((q) => (
           <div key={q.id} className="flex items-center justify-between gap-3 rounded-lg border border-border-light bg-surface2 px-3.5 py-2.5">

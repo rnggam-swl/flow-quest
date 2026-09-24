@@ -1,23 +1,20 @@
 import { readFileSync } from "fs";
 import path from "path";
 import { describe, it, expect, vi } from "vitest";
-import { MODULES } from "./content";
+import { caseContentSchema, findPlanWidgetProblems } from "@/lib/content/case";
 import { checkRules, parseEdge, checkRule } from "./flowRules";
 import { buildPracticeDiagram } from "./flowDiagram";
-import {
-  ANSWER_KEY_PATTERN,
-  MAIN_PART,
-  answerKey,
-  findPlanProblems,
-  findWidgetProblems,
-  planParts,
-  resolvePlan,
-  widgetForAnswerKey,
-} from "./plan";
-import { MODULE_KEYS, planWidgetSchema, practicePlanContentSchema, type FixerWidget } from "./schema";
+import { nodeDictionary } from "./nodes";
+import { ANSWER_KEY_PATTERN, MAIN_PART, allModulesView, answerKey, findPlanProblems, planParts, resolvePlan, widgetForAnswerKey } from "./plan";
+import { practicePlanContentSchema, type FixerWidget } from "./schema";
+
+const root = path.resolve(import.meta.dirname, "../../..");
+const klub = caseContentSchema.parse(JSON.parse(readFileSync(path.join(root, "prisma/cases/klub-fotografi.json"), "utf8")));
+const dict = nodeDictionary(klub.nodes);
+const moduleKeys = klub.modules.map((m) => m.key);
 
 const rules = (specs: string[], edges: string[], nodes: string[], start = "regform") =>
-  Object.fromEntries(checkRules(specs, nodes, edges, start).map((r, i) => [specs[i], r.pass]));
+  Object.fromEntries(checkRules(specs, nodes, edges, start, dict).map((r, i) => [specs[i], r.pass]));
 
 describe("checkRule", () => {
   const nodes = ["regform", "confirmation", "success", "error"];
@@ -60,38 +57,15 @@ describe("checkRule", () => {
 
   it("checks recovery targets and forbidden edges", () => {
     const edges = ["confirmation>error", "error>home:R"].map(parseEdge);
-    expect(checkRule("recovery:error:regform", nodes, edges, "regform").pass).toBe(false);
-    expect(checkRule("not:error>home:R", nodes, edges, "regform")).toEqual({
+    expect(checkRule("recovery:error:regform", nodes, edges, "regform", dict).pass).toBe(false);
+    expect(checkRule("not:error>home:R", nodes, edges, "regform", dict)).toEqual({
       label: "Error tidak mengarahkan kembali ke Home",
       pass: false,
     });
   });
 });
 
-describe("core module content", () => {
-  const all = MODULE_KEYS.flatMap((k) =>
-    (["coba", "penjelasan", "latihan"] as const).flatMap((stage) =>
-      MODULES[k][stage].map((w, i) => ({ where: `${k}.${stage}.${i}`, widget: w }))
-    )
-  );
-
-  it("matches the widget schema everywhere except the trusted prose blocks", () => {
-    for (const { where, widget } of all) {
-      if (widget.type === "text") continue;
-      expect(planWidgetSchema.safeParse(widget).success, where).toBe(true);
-    }
-  });
-
-  it("has no broken references, unreachable answers, or fixers that are already solved", () => {
-    expect(all.flatMap(({ where, widget }) => findWidgetProblems(widget, where))).toEqual([]);
-  });
-
-  it("never puts a write widget in Penjelasan, where answers aren't saved", () => {
-    expect(all.filter(({ where, widget }) => where.includes(".penjelasan.") && widget.type === "write")).toEqual([]);
-  });
-});
-
-describe("findWidgetProblems", () => {
+describe("findPlanWidgetProblems", () => {
   const base: FixerWidget = {
     type: "fixer",
     nodes: ["regform", "confirmation", "success", "error"],
@@ -103,27 +77,27 @@ describe("findWidgetProblems", () => {
   };
 
   it("accepts a well-formed fixer", () => {
-    expect(findWidgetProblems(base, "w")).toEqual([]);
+    expect(findPlanWidgetProblems(base, "w", klub)).toEqual([]);
   });
 
   it("flags a model solution that breaks its own rules", () => {
-    const problems = findWidgetProblems({ ...base, solution: base.initial }, "w");
-    expect(problems.some((p) => p.includes("contoh jawaban belum memenuhi aturan"))).toBe(true);
+    const problems = findPlanWidgetProblems({ ...base, solution: base.initial }, "w", klub);
+    expect(problems.some((p) => p.includes("contoh jawaban belum memenuhi semua aturan"))).toBe(true);
   });
 
   it("flags a solution the switches can't produce", () => {
-    const problems = findWidgetProblems({ ...base, extra: [] }, "w");
+    const problems = findPlanWidgetProblems({ ...base, extra: [] }, "w", klub);
     expect(problems.some((p) => p.includes("tidak bisa dinyalakan: confirmation>error"))).toBe(true);
   });
 
   it("flags a starting flow with nothing to fix", () => {
-    expect(findWidgetProblems({ ...base, initial: base.solution }, "w").join("\n")).toMatch(/flow awal sudah memenuhi/);
+    expect(findPlanWidgetProblems({ ...base, initial: base.solution }, "w", klub).join("\n")).toMatch(/flow awal sudah memenuhi/);
   });
 
   it("flags unknown nodes and rules", () => {
-    const problems = findWidgetProblems({ ...base, rules: [...base.rules, "sparkle:x"], nodes: [...base.nodes, "mystery"] }, "w");
+    const problems = findPlanWidgetProblems({ ...base, rules: [...base.rules, "sparkle:x"], nodes: [...base.nodes, "mystery"] }, "w", klub);
     expect(problems.join("\n")).toMatch(/aturan tidak dikenal: sparkle:x/);
-    expect(problems.join("\n")).toMatch(/node "mystery"/);
+    expect(problems.join("\n")).toMatch(/node tidak ada di kamus kasus: mystery/);
   });
 });
 
@@ -133,19 +107,20 @@ describe("example plan file", () => {
     for (const plan of file.plans) {
       const parsed = practicePlanContentSchema.safeParse(plan);
       expect(parsed.success).toBe(true);
-      expect(findPlanProblems(parsed.data!)).toEqual([]);
+      expect(findPlanProblems(parsed.data!, klub)).toEqual([]);
     }
   });
 });
 
 describe("resolvePlan", () => {
-  it("falls back to all six modules, greeting by first name, when there's no personal plan", () => {
-    const plan = resolvePlan(null, "Siti Nur Mirra");
+  it("falls back to every module of the case, greeting by first name, when there's no personal plan", () => {
+    const plan = resolvePlan(null, "Siti Nur Mirra", klub.modules);
     expect(plan.personal).toBe(false);
     expect(plan.heading).toBe("Halo, Siti");
     expect(plan.subtitle).toBe("Siti Nur Mirra");
-    expect(plan.content.modules).toEqual([...MODULE_KEYS]);
-    expect(planParts(plan.content)).toEqual([...MODULE_KEYS]);
+    expect(plan.content.modules).toEqual(moduleKeys);
+    expect(planParts(plan.content)).toEqual(moduleKeys);
+    expect(allModulesView(klub.modules).content.modules).toEqual(moduleKeys);
   });
 
   it("uses the mentor's greeting name and adds the main exercise as the last part", () => {
@@ -156,7 +131,8 @@ describe("resolvePlan", () => {
         modules: ["A", "B"],
         main: { title: "Perbaiki", intro: "…", widgets: [{ type: "selfcheck", items: ["Sudah"] }] },
       },
-      "Siti Nur Mirra"
+      "Siti Nur Mirra",
+      klub.modules
     );
     expect(plan.personal).toBe(true);
     expect(plan.heading).toBe("Halo, Mirra");
@@ -168,7 +144,8 @@ describe("resolvePlan", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const plan = resolvePlan(
       { intro: "x", modules: ["A"], main: { title: "t", intro: "i", widgets: [{ type: "text", html: "<img src=x onerror=alert(1)>" }] } },
-      "Rani"
+      "Rani",
+      klub.modules
     );
     expect(plan.personal).toBe(false);
     expect(plan.content.main).toBeFalsy();
@@ -178,16 +155,17 @@ describe("resolvePlan", () => {
 
 describe("answer keys", () => {
   it("resolve to the write widgets they were saved from", () => {
-    const content = resolvePlan(null, "Rani").content;
+    const content = resolvePlan(null, "Rani", klub.modules).content;
     const key = answerKey("E", "latihan", 1);
     expect(ANSWER_KEY_PATTERN.test(key)).toBe(true);
-    expect(widgetForAnswerKey(content, key)?.type).toBe("write");
-    expect(widgetForAnswerKey(content, answerKey("F", "coba", 0))?.type).toBe("write");
-    expect(widgetForAnswerKey(content, answerKey("A", "coba", 0))?.type).toBe("mcq");
+    expect(widgetForAnswerKey(content, key, klub.modules)?.type).toBe("write");
+    expect(widgetForAnswerKey(content, answerKey("F", "coba", 0), klub.modules)?.type).toBe("write");
+    expect(widgetForAnswerKey(content, answerKey("A", "coba", 0), klub.modules)?.type).toBe("mcq");
+    expect(widgetForAnswerKey(content, answerKey("Z", "coba", 0), klub.modules)).toBeNull();
   });
 
   it("reject anything that isn't a module stage or the main exercise", () => {
-    for (const bad of ["G.coba.0", "A.penjelasan.0", "main.coba.0", "A.coba", "__proto__", "A.coba.0.x"]) {
+    for (const bad of ["A.penjelasan.0", "main.coba.0", "A.coba", "__proto__", "A.coba.0.x", "a b.coba.0"]) {
       expect(ANSWER_KEY_PATTERN.test(bad), bad).toBe(false);
     }
   });
@@ -196,13 +174,13 @@ describe("answer keys", () => {
 describe("buildPracticeDiagram", () => {
   it("pulls nodes that aren't reachable from the start into a captioned floating column", () => {
     const flow = { start: "home", nodes: ["home", "clublist", "clubdetail", "regform", "confirmation", "success"] };
-    const diagram = buildPracticeDiagram(flow.nodes, ["home>clublist", "clublist>clubdetail", "clubdetail>confirmation", "confirmation>success"], flow.start);
+    const diagram = buildPracticeDiagram(flow.nodes, ["home>clublist", "clublist>clubdetail", "clubdetail>confirmation", "confirmation>success"], flow.start, dict);
     expect(diagram.floatCaption).not.toBeNull();
     expect(diagram.nodes.filter((n) => n.floating).map((n) => n.id)).toEqual(["regform"]);
   });
 
   it("doesn't mark anything floating when the whole flow is one fragment", () => {
-    const diagram = buildPracticeDiagram(undefined, ["regform>confirmation", "confirmation>success", "confirmation>error", "error>regform:R"], "regform");
+    const diagram = buildPracticeDiagram(undefined, ["regform>confirmation", "confirmation>success", "confirmation>error", "error>regform:R"], "regform", dict);
     expect(diagram.floatCaption).toBeNull();
     expect(diagram.nodes.some((n) => n.floating)).toBe(false);
     expect(diagram.edges.map((e) => e.kind)).toEqual(["D", "D", "D", "R"]);

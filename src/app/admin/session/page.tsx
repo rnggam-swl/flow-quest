@@ -1,4 +1,5 @@
-import { getManagedSession, listAllSessions } from "@/lib/managedSession";
+import { getManagedSession, listAllSessions, listPlayableCases } from "@/lib/managedSession";
+import { effectiveTimeLimit, getSessionContent, questOf } from "@/lib/content/sessionContent";
 import { prisma } from "@/lib/prisma";
 import { Eyebrow, Headline, Sub } from "@/components/ui";
 import { SessionSettingsForm } from "./SessionSettingsForm";
@@ -14,14 +15,16 @@ export default async function AdminSessionPage() {
     );
   }
 
-  const [sessionQuests, allSessions] = await Promise.all([
-    prisma.sessionQuest.findMany({
-      where: { sessionId: session.id },
-      orderBy: { order: "asc" },
-      include: { Quest: true },
-    }),
+  const [sessionQuests, allSessions, cases, pinned] = await Promise.all([
+    prisma.sessionQuest.findMany({ where: { sessionId: session.id }, orderBy: { order: "asc" } }),
     listAllSessions(),
+    listPlayableCases(),
+    getSessionContent(session.id),
   ]);
+  const quests = sessionQuests.flatMap((sq) => {
+    const quest = pinned ? questOf(pinned.content, sq.order) : undefined;
+    return quest ? [{ id: sq.questId, order: sq.order, title: quest.title, timeLimitMinutes: effectiveTimeLimit(quest, sq.timeLimitMinutes), implemented: true }] : [];
+  });
 
   return (
     <div className="mx-auto max-w-[720px] px-6 pt-4 pb-20">
@@ -39,13 +42,7 @@ export default async function AdminSessionPage() {
           endAt: session.endAt?.toISOString() ?? null,
           timeLimitMinutes: session.timeLimitMinutes,
         }}
-        quests={sessionQuests.map((sq) => ({
-          id: sq.Quest.id,
-          order: sq.Quest.order,
-          title: sq.Quest.title,
-          timeLimitMinutes: sq.Quest.timeLimitMinutes,
-          implemented: sq.Quest.order !== 1,
-        }))}
+        quests={quests}
       />
 
       <div className="mt-10">
@@ -62,8 +59,11 @@ export default async function AdminSessionPage() {
             status: s.status,
             createdAt: s.createdAt.toISOString(),
             participantCount: s.participantCount,
+            caseTitle: s.caseTitle,
+            caseVersion: s.caseVersion,
           }))}
           currentSessionId={session.id}
+          cases={cases}
         />
       </div>
     </div>

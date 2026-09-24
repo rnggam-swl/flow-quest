@@ -8,7 +8,7 @@ import {
   type RouteObstacle,
   type Side,
 } from "@/lib/flowLayout";
-import { QUEST5_NODE_LIBRARY, type ConnectionKind } from "@/lib/flowScoring";
+import type { ConnectionKind } from "@/lib/flowScoring";
 
 /**
  * Geometry for the read-only replay of a flow a participant built, shared by
@@ -23,6 +23,8 @@ export interface FlowGraphNode {
   id: string;
   label: string;
   nodeType: string;
+  /** From the case's node library; nodes it doesn't know get a generic icon. */
+  icon?: string;
   positionX: number;
   positionY: number;
 }
@@ -199,18 +201,15 @@ export function buildFlowGraph(
   const minX = Math.min(...raw.map((r) => r.pos.x));
   const minY = Math.min(...raw.map((r) => r.pos.y));
 
-  const placed: PlacedNode[] = raw.map(({ node, pos }) => {
-    const def = QUEST5_NODE_LIBRARY.find((d) => d.label === node.label);
-    return {
-      id: node.id,
-      label: node.label,
-      nodeType: node.nodeType,
-      icon: def?.icon ?? "📄",
-      decision: def?.decision ?? node.nodeType === "DECISION",
-      x: pos.x - minX + PAD,
-      y: pos.y - minY + PAD,
-    };
-  });
+  const placed: PlacedNode[] = raw.map(({ node, pos }) => ({
+    id: node.id,
+    label: node.label,
+    nodeType: node.nodeType,
+    icon: node.icon ?? "📄",
+    decision: node.nodeType === "DECISION",
+    x: pos.x - minX + PAD,
+    y: pos.y - minY + PAD,
+  }));
   const byId = new Map(placed.map((n) => [n.id, n]));
 
   const canvasW = Math.max(...placed.map((n) => n.x + NODE_W)) + PAD;

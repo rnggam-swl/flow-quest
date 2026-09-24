@@ -1,31 +1,37 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
-import { getLatestEnrollment, getQuestList } from "@/lib/participant";
-import { ensureSoloTeam } from "@/lib/soloTeam";
+import { getPlayContext, getQuestList } from "@/lib/questPlay";
 import { isSessionOpenNow, isWithinPersonalDeadline } from "@/lib/sessionAccess";
 import { getPracticeSummary, hasFinishedAllQuests } from "@/lib/practice/practiceData";
+import { RichText } from "@/components/RichText";
 import { CenteredShell, Eyebrow, Headline, Sub } from "@/components/ui";
 
 export default async function BriefPage() {
   const user = await requireRole("PARTICIPANT");
-  const enrollment = await getLatestEnrollment(user.id);
-  if (!enrollment) return null;
-
-  const teamId = await ensureSoloTeam(enrollment.sessionId, user.id, user.displayName);
-  const { items } = await getQuestList(enrollment.sessionId, teamId, user.id);
+  const play = await getPlayContext(user.id, user.displayName);
+  if (!play) {
+    return (
+      <CenteredShell>
+        <p className="text-muted">Session kamu belum punya konten quest. Hubungi admin/mentor kamu.</p>
+      </CenteredShell>
+    );
+  }
+  const { enrollment, ctx } = play;
+  const items = await getQuestList(ctx.sessionParticipantId, ctx.sessionId, ctx.content);
   const scheduleOpen = isSessionOpenNow(enrollment.Session);
   const withinDeadline = isWithinPersonalDeadline(enrollment);
   const sessionOpen = scheduleOpen && withinDeadline;
-  const practice = hasFinishedAllQuests(items) ? await getPracticeSummary(enrollment.id, user.displayName) : null;
+  const practice = hasFinishedAllQuests(items) ? await getPracticeSummary(enrollment.id, user.displayName, ctx.content.modules) : null;
 
   return (
     <CenteredShell>
       <Eyebrow>Halo, {user.displayName.split(" ")[0]} 👋</Eyebrow>
       <Headline>User Flow Quest</Headline>
-      <Sub>
-        Lima quest membawa kamu dari memahami tujuan pengguna sampai menyusun flow lengkap dengan
-        alasannya. Selesaikan berurutan untuk membuka quest berikutnya.
-      </Sub>
+      {ctx.content.brief ? (
+        <RichText source={ctx.content.brief} className="mb-7 text-[15px] leading-[1.6] text-muted" paragraphClassName="mb-2 last:mb-0" />
+      ) : (
+        <Sub>Selesaikan quest berurutan untuk membuka quest berikutnya.</Sub>
+      )}
       <p className="-mt-3 mb-5 text-[12px] text-muted2">
         Waktu pengerjaan dan aktivitas kamu di setiap quest dicatat untuk keperluan evaluasi.
       </p>
@@ -80,10 +86,9 @@ export default async function BriefPage() {
             </div>
           );
 
-          if (done && item.order >= 2) {
-            const resultHref = item.order === 2 ? "/result" : `/result/${item.order}`;
+          if (done) {
             return (
-              <Link key={item.questId} href={resultHref}>
+              <Link key={item.questId} href={`/result/${item.order}`}>
                 {content}
               </Link>
             );
@@ -110,7 +115,7 @@ export default async function BriefPage() {
           <div className="mt-1 text-[13.5px] leading-[1.55] text-muted">
             {practice.personal
               ? "Modul yang dipilih khusus dari hasil quest kamu, ditambah latihan memperbaiki flow milikmu sendiri."
-              : "Enam modul inti untuk memperkuat cara kamu menyusun flow."}
+              : `${practice.total} modul inti untuk memperkuat cara kamu menyusun flow.`}
           </div>
           <div className="mt-2.5 text-[12.5px] font-semibold text-teal">
             {practice.done === 0

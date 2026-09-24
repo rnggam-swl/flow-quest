@@ -1,4 +1,4 @@
-import { nodeLabel, nodeType, type PracticeNodeType } from "@/lib/practice/content";
+import type { NodeDictionary, PracticeNodeType } from "@/lib/practice/nodes";
 import { edgeText, parseEdge, type PracticeEdge } from "@/lib/practice/flowRules";
 
 /**
@@ -73,7 +73,7 @@ interface Box {
   right: number;
 }
 
-function layout(nodes: string[], edges: PracticeEdge[], start: string) {
+function layout(nodes: string[], edges: PracticeEdge[], start: string, dict: NodeDictionary) {
   const flowEdges = edges.filter((e) => e.k !== "R");
   const level = new Map<string, number>();
   const floating = new Set<string>();
@@ -129,7 +129,7 @@ function layout(nodes: string[], edges: PracticeEdge[], start: string) {
 
   const pos = new Map<string, Box>();
   const place = (n: string, cx: number, top: number) => {
-    const decision = nodeType(n) === "decision";
+    const decision = dict.type(n) === "decision";
     const w = decision ? DW : NW;
     const h = decision ? DH : NH;
     pos.set(n, { cx, top, w, h, cy: top + h / 2, bottom: top + h, left: cx - w / 2, right: cx + w / 2 });
@@ -162,10 +162,10 @@ function bezierPoint(p0: Pt, p1: Pt, p2: Pt, p3: Pt, t: number): Pt {
   };
 }
 
-export function buildPracticeDiagram(nodesIn: string[] | undefined, edgeKeys: string[], start: string): PracticeDiagram {
+export function buildPracticeDiagram(nodesIn: string[] | undefined, edgeKeys: string[], start: string, dict: NodeDictionary): PracticeDiagram {
   const edges = edgeKeys.map(parseEdge);
   const nodes = [...new Set([...(nodesIn || []), ...edges.flatMap((e) => [e.f, e.t])])];
-  const { pos, width, height, floating, floatX0, center, minLeft, maxRight } = layout(nodes, edges, start);
+  const { pos, width, height, floating, floatX0, center, minLeft, maxRight } = layout(nodes, edges, start, dict);
   // Only mark nodes as floating when there's also a main flow to be disconnected from.
   const showFloating = floating.size > 0 && floating.size < nodes.length;
 
@@ -243,10 +243,10 @@ export function buildPracticeDiagram(nodesIn: string[] | undefined, edgeKeys: st
 
   const outNodes: DiagramNode[] = nodes.map((n) => {
     const p = pos.get(n)!;
-    const type = nodeType(n) ?? "screen";
+    const type = dict.type(n) ?? "screen";
     return {
       id: n,
-      label: nodeLabel(n),
+      label: dict.label(n),
       type,
       typeName: TYPE_NAME[type],
       floating: showFloating && floating.has(n),
@@ -260,6 +260,6 @@ export function buildPracticeDiagram(nodesIn: string[] | undefined, edgeKeys: st
     nodes: outNodes,
     edges: outEdges,
     floatCaption: showFloating ? { x: floatX0 + 8, y: PAD - 14 } : null,
-    ariaLabel: "Diagram flow: " + edges.map(edgeText).join(", "),
+    ariaLabel: "Diagram flow: " + edges.map((e) => edgeText(e, dict)).join(", "),
   };
 }

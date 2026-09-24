@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getRubricMax } from "@/lib/flowScoring";
+import { flowQuestionOf, getSessionContent, questOf } from "@/lib/content/sessionContent";
 import { FlowGraphView } from "@/components/FlowGraphView";
 import { Eyebrow, Headline } from "@/components/ui";
 
@@ -36,8 +36,21 @@ export default async function SubmissionViewerPage({
     : null;
 
   const score = submission.Score;
-  const max = getRubricMax(submission.Quest.order);
-  const withReflection = submission.Quest.order === 2 || submission.Quest.order === 5;
+  const content = (await getSessionContent(submission.Team.sessionId))?.content;
+  const quest = content ? questOf(content, submission.Quest.order) : undefined;
+  const flow = quest ? flowQuestionOf(quest) : undefined;
+  if (!content || !flow) notFound();
+  const m = flow.rubric.scores;
+  const max = {
+    goal: m.goal?.max ?? 0,
+    flow: m.flow?.max ?? 0,
+    logic: m.logic?.max ?? 0,
+    constraint: m.constraint?.max ?? 0,
+    edgeCase: m.edgeCase?.max ?? 0,
+    simplicity: m.simplicity?.max ?? 0,
+  };
+  const withReflection = Boolean(flow.reflection);
+  const iconOf = new Map(content.nodes.map((n) => [n.label, n.icon]));
   const displayMax = max.goal + max.flow + max.logic + max.constraint + max.edgeCase + max.simplicity + (withReflection ? 10 : 0);
 
   const rows: [string, string][] = score
@@ -67,7 +80,7 @@ export default async function SubmissionViewerPage({
             Flow yang Disusun
           </div>
           <FlowGraphView
-            nodes={submission.FlowNode}
+            nodes={submission.FlowNode.map((n) => ({ ...n, icon: iconOf.get(n.label) }))}
             connections={submission.FlowConnection}
             nativeViewMode={participant?.flowViewMode ?? "HORIZONTAL"}
             idPrefix="submission"

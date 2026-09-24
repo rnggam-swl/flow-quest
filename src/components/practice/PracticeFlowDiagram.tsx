@@ -1,6 +1,7 @@
 import { useId, useMemo } from "react";
 import { buildPracticeDiagram, type DiagramEdgeKind } from "@/lib/practice/flowDiagram";
-import type { PracticeNodeType } from "@/lib/practice/content";
+import type { PracticeNodeType } from "@/lib/practice/nodes";
+import { usePracticeNodes } from "./nodesContext";
 import s from "./practice.module.css";
 
 const MARKER_COLOR: Record<DiagramEdgeKind, string> = { D: "#45D9C3", Y: "#45D9C3", N: "#F2705C", R: "#F0AC3F" };
@@ -21,7 +22,8 @@ function cx(...classes: Array<string | false | undefined>) {
 export function PracticeFlowDiagram({ nodes, edges, start }: { nodes?: string[]; edges: string[]; start: string }) {
   // Marker ids must be unique per diagram and valid inside url(#…).
   const id = "pf" + useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const diagram = useMemo(() => buildPracticeDiagram(nodes, edges, start), [nodes, edges, start]);
+  const dict = usePracticeNodes();
+  const diagram = useMemo(() => buildPracticeDiagram(nodes, edges, start, dict), [nodes, edges, start, dict]);
 
   return (
     <svg viewBox={`0 0 ${diagram.width} ${diagram.height}`} role="img" aria-label={diagram.ariaLabel} style={{ maxWidth: diagram.width }}>

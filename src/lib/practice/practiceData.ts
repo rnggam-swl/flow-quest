@@ -1,12 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/auth";
-import { getLatestEnrollment, getQuestList, type QuestListItem } from "@/lib/participant";
-import { ensureSoloTeam } from "@/lib/soloTeam";
+import { getPlayContext, getQuestList } from "@/lib/questPlay";
 import { planParts, resolvePlan, type ResolvedPlan } from "@/lib/practice/plan";
+import type { CaseNode, ModuleContent, PracticeClosing } from "@/lib/content/case";
 
 /** Modul Latihan opens once every quest in the session is done (a timed-out Quest 5 still counts). */
-export function hasFinishedAllQuests(items: QuestListItem[]) {
+export function hasFinishedAllQuests(items: { state: string }[]) {
   return items.length > 0 && items.every((i) => i.state === "completed");
 }
 
@@ -21,6 +21,10 @@ export interface ParticipantPractice {
   sessionParticipantId: string;
   finished: boolean;
   plan: ResolvedPlan;
+  /** The session's case: its modules and the node library their fixers and diagrams draw from. */
+  modules: ModuleContent[];
+  nodes: CaseNode[];
+  closing?: PracticeClosing;
   completedParts: string[];
   answers: SavedAnswers;
 }
@@ -31,28 +35,30 @@ export interface ParticipantPractice {
  * the modules are follow-up study, meant to be opened after the workshop.
  */
 export async function loadParticipantPractice(user: CurrentUser): Promise<ParticipantPractice | null> {
-  const enrollment = await getLatestEnrollment(user.id);
-  if (!enrollment) return null;
-
-  const teamId = await ensureSoloTeam(enrollment.sessionId, user.id, user.displayName);
-  const [{ items }, row] = await Promise.all([
-    getQuestList(enrollment.sessionId, teamId, user.id),
-    prisma.practicePlan.findUnique({ where: { sessionParticipantId: enrollment.id } }),
+  const play = await getPlayContext(user.id, user.displayName);
+  if (!play) return null;
+  const { ctx } = play;
+  const [items, row] = await Promise.all([
+    getQuestList(ctx.sessionParticipantId, ctx.sessionId, ctx.content),
+    prisma.practicePlan.findUnique({ where: { sessionParticipantId: ctx.sessionParticipantId } }),
   ]);
 
   return {
-    sessionParticipantId: enrollment.id,
+    sessionParticipantId: ctx.sessionParticipantId,
     finished: hasFinishedAllQuests(items),
-    plan: resolvePlan(row?.content, user.displayName),
+    plan: resolvePlan(row?.content, user.displayName, ctx.content.modules),
+    modules: ctx.content.modules,
+    nodes: ctx.content.nodes,
+    closing: ctx.content.practiceClosing,
     completedParts: row?.completedParts ?? [],
     answers: readAnswers(row?.answers),
   };
 }
 
 /** Progress line for the Modul Latihan card on /brief. */
-export async function getPracticeSummary(sessionParticipantId: string, displayName: string) {
+export async function getPracticeSummary(sessionParticipantId: string, displayName: string, modules: ModuleContent[]) {
   const row = await prisma.practicePlan.findUnique({ where: { sessionParticipantId } });
-  const plan = resolvePlan(row?.content, displayName);
+  const plan = resolvePlan(row?.content, displayName, modules);
   const parts = planParts(plan.content);
   return {
     personal: plan.personal,

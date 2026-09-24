@@ -88,27 +88,7 @@ export default async function ParticipantReportPage({
         </div>
       )}
 
-      {report.quest1 && (
-        <div className="mb-5 rounded-[14px] border border-border bg-surface p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-[15px] font-semibold">Quest 1 · {report.quest1.title}</div>
-            <span className="text-[12px] text-muted2">Waktu: {fmtSeconds(report.quest1.timeSpentSeconds)}</span>
-          </div>
-          {report.quest1.completed ? (
-            <div className="text-[13.5px] leading-[1.6]">
-              <span className={report.quest1.correct ? "text-success" : "text-danger"}>
-                {report.quest1.correct ? "✓ Benar" : "✗ Salah"}
-              </span>
-              {" — "}
-              <span className="text-muted">Jawaban: &quot;{report.quest1.selectedText ?? "—"}&quot;</span>
-            </div>
-          ) : (
-            <p className="text-muted2">Belum diselesaikan.</p>
-          )}
-        </div>
-      )}
-
-      {report.flowQuests.map((q) => (
+      {report.quests.map((q) => (
         <div key={q.order} className="mb-5 rounded-[14px] border border-border bg-surface p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-[15px] font-semibold">
@@ -116,8 +96,12 @@ export default async function ParticipantReportPage({
             </div>
             <div className="flex gap-3 text-[12px] text-muted2">
               <span>Waktu: {fmtSeconds(q.timeSpentSeconds)}</span>
-              <span>Ke aksi pertama: {fmtSeconds(q.timeToFirstActionSeconds)}</span>
-              <span>Revisi: {q.revisionCount}×</span>
+              {q.flow && (
+                <>
+                  <span>Ke aksi pertama: {fmtSeconds(q.flow.timeToFirstActionSeconds)}</span>
+                  <span>Revisi: {q.flow.revisionCount}×</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -125,24 +109,45 @@ export default async function ParticipantReportPage({
             <p className="text-muted2">Belum dimulai.</p>
           ) : (
             <>
-              <div className="mb-2.5 text-[13px]">
-                <span className="text-muted">Skor: </span>
-                <span className="font-semibold">
-                  {q.totalScore !== null ? `${q.totalScore} / ${q.maxScore}` : "Belum dinilai"}
-                </span>
-                <span className="ml-3 text-muted2">({q.status})</span>
-              </div>
-              <div className="mb-2.5">
-                <FlowGraphView
-                  nodes={q.graph.nodes}
-                  connections={q.graph.connections}
-                  nativeViewMode={report.flowViewMode}
-                  idPrefix={`q${q.order}`}
-                  maxHeight={480}
-                />
-              </div>
-              {q.reflection && (
-                <p className="text-[13px] italic leading-[1.6] text-muted">&quot;{q.reflection}&quot;</p>
+              {q.quiz.length > 0 && (
+                <div className="mb-3 flex flex-col gap-2">
+                  {q.quiz.map((a) => {
+                    const ok = a.total > 0 && a.correct === a.total;
+                    return (
+                      <div key={a.questionId} className="text-[13.5px] leading-[1.6]">
+                        <div>
+                          <span className={!a.answered ? "text-muted2" : ok ? "text-success" : a.correct > 0 ? "text-gold" : "text-danger"}>
+                            {!a.answered ? "— Belum dijawab" : ok ? "✓ Benar" : `${a.correct}/${a.total} benar`}
+                          </span>
+                          <span className="text-muted2"> · {a.typeLabel}</span> — {a.prompt}
+                        </div>
+                        {a.answered && <div className="text-muted">Jawaban: &quot;{a.answerText}&quot;</div>}
+                        {a.answered && !ok && <div className="text-muted2">Kunci: {a.correctText}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {q.flow && (
+                <>
+                  <div className="mb-2.5 text-[13px]">
+                    <span className="text-muted">Skor flow: </span>
+                    <span className="font-semibold">
+                      {q.flow.totalScore !== null ? `${q.flow.totalScore} / ${q.flow.maxScore}` : "Belum dinilai"}
+                    </span>
+                    <span className="ml-3 text-muted2">({q.status})</span>
+                  </div>
+                  <div className="mb-2.5">
+                    <FlowGraphView
+                      nodes={q.flow.graph.nodes}
+                      connections={q.flow.graph.connections}
+                      nativeViewMode={report.flowViewMode}
+                      idPrefix={`q${q.order}`}
+                      maxHeight={480}
+                    />
+                  </div>
+                  {q.flow.reflection && <p className="text-[13px] italic leading-[1.6] text-muted">&quot;{q.flow.reflection}&quot;</p>}
+                </>
               )}
             </>
           )}

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getManagedSession } from "@/lib/managedSession";
 import { prisma } from "@/lib/prisma";
 import { answeredQuestion, planParts, resolvePlan } from "@/lib/practice/plan";
+import { getSessionContent } from "@/lib/content/sessionContent";
 import { readAnswers } from "@/lib/practice/practiceData";
 import { PracticeWorkbook } from "@/components/practice/PracticeWorkbook";
 import { Eyebrow, Headline } from "@/components/ui";
@@ -21,9 +22,11 @@ export default async function AdminParticipantPracticePage({
     include: { User: true, PracticePlan: true },
   });
   if (!enrollment) notFound();
+  const content = (await getSessionContent(session.id))?.content;
+  if (!content) notFound();
 
   const row = enrollment.PracticePlan;
-  const plan = resolvePlan(row?.content, enrollment.User.displayName);
+  const plan = resolvePlan(row?.content, enrollment.User.displayName, content.modules);
   const parts = planParts(plan.content);
   const completed = row?.completedParts ?? [];
   const answers = readAnswers(row?.answers);
@@ -38,7 +41,7 @@ export default async function AdminParticipantPracticePage({
         <Eyebrow>Pratinjau Halaman Peserta</Eyebrow>
         <Headline className="text-[26px]">{enrollment.User.displayName}</Headline>
         <p className="mb-4 text-[13.5px] text-muted">
-          {plan.personal ? "Rencana personal" : "Belum ada rencana personal (keenam modul)"} ·{" "}
+          {plan.personal ? "Rencana personal" : "Belum ada rencana personal (semua modul)"} ·{" "}
           {parts.filter((p) => completed.includes(p)).length} dari {parts.length} bagian selesai ·{" "}
           <Link href={`/admin/participant/${enrollment.id}`} className="text-teal underline">
             Laporan quest →
@@ -51,7 +54,7 @@ export default async function AdminParticipantPracticePage({
             <div className="flex flex-col gap-3.5">
               {answerEntries.map(([key, text]) => (
                 <div key={key}>
-                  <div className="mb-1 text-[13px] font-semibold">{answeredQuestion(plan.content, key)}</div>
+                  <div className="mb-1 text-[13px] font-semibold">{answeredQuestion(plan.content, key, content.modules)}</div>
                   <p className="whitespace-pre-wrap text-[13.5px] leading-[1.6] text-muted">{text}</p>
                 </div>
               ))}
@@ -64,7 +67,15 @@ export default async function AdminParticipantPracticePage({
           interaksinya; tidak ada yang tersimpan atau mengubah progres peserta.
         </p>
       </div>
-      <PracticeWorkbook plan={plan} initialCompleted={completed} initialAnswers={answers} mode="preview" />
+      <PracticeWorkbook
+        plan={plan}
+        modules={content.modules}
+        nodes={content.nodes}
+        closing={content.practiceClosing}
+        initialCompleted={completed}
+        initialAnswers={answers}
+        mode="preview"
+      />
     </>
   );
 }

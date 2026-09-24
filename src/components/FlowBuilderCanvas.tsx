@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { FocusGuard } from "@/components/FocusGuard";
-import { getValidatorForOrder, type ConnectionKind, type NodeLibItem } from "@/lib/flowScoring";
+import type { ConnectionKind, NodeLibItem } from "@/lib/flowScoring";
+import { graphFromFlow, scoreFlow, type FlowRubric, type LibraryNode } from "@/lib/content/rubric";
 import {
   autoLayout,
   computeAdjustableSegments,
@@ -51,6 +52,90 @@ const OBSTACLE_PADDING = 6;
 type FlowViewMode = "VERTICAL" | "HORIZONTAL";
 const SIDES: Side[] = ["top", "right", "bottom", "left"];
 
+/**
+ * Where the canvas keeps what's drawn. Participants' flows go to /api/quest2/*
+ * (apiPersistence); the builder draws answer keys and test flows in memory
+ * (localPersistence). Every call is made after the local state already
+ * changed, and a false/null result rolls that change back.
+ */
+export interface FlowPersistence {
+  createNode(node: { id: string; label: string; nodeType: string; positionX: number; positionY: number }): Promise<boolean>;
+  moveNode(id: string, positionX: number, positionY: number): Promise<boolean>;
+  deleteNode(id: string): Promise<boolean>;
+  /** Resolves to the stored connection's id (a pre-existing duplicate's, possibly), or null on failure. */
+  createConnection(c: { id: string; sourceNodeId: string; targetNodeId: string; connectionType: ConnectionKind }): Promise<{ id: string } | null>;
+  rewireConnection(id: string, targetNodeId: string): Promise<{ deleted: boolean } | null>;
+  deleteConnection(id: string): Promise<boolean>;
+  reset(): Promise<boolean>;
+  saveViewMode(mode: FlowViewMode): Promise<void>;
+  submit(timeExpired: boolean): Promise<boolean>;
+}
+
+async function send(url: string, method: string, body?: unknown) {
+  const res = await fetch(url, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return res;
+}
+
+function apiPersistence(submissionId: string): FlowPersistence {
+  return {
+    async createNode(n) {
+      return (await send("/api/quest2/node", "POST", { submissionId, ...n })).ok;
+    },
+    async moveNode(id, positionX, positionY) {
+      return (await send(`/api/quest2/node/${id}`, "PATCH", { positionX, positionY })).ok;
+    },
+    async deleteNode(id) {
+      return (await send(`/api/quest2/node/${id}`, "DELETE")).ok;
+    },
+    async createConnection(c) {
+      const res = await send("/api/quest2/connection", "POST", { submissionId, ...c });
+      if (!res.ok) return null;
+      const { connection } = await res.json();
+      return { id: connection.id };
+    },
+    async rewireConnection(id, targetNodeId) {
+      const res = await send(`/api/quest2/connection/${id}`, "PATCH", { targetNodeId });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return { deleted: Boolean(data.deleted) };
+    },
+    async deleteConnection(id) {
+      return (await send(`/api/quest2/connection/${id}`, "DELETE")).ok;
+    },
+    async reset() {
+      return (await send("/api/quest2/reset", "POST", { submissionId })).ok;
+    },
+    async saveViewMode(viewMode) {
+      await send("/api/participant/view-mode", "PATCH", { viewMode });
+    },
+    async submit(timeExpired) {
+      return (await send("/api/quest2/submit", "POST", { submissionId, timeExpired })).ok;
+    },
+  };
+}
+
+/** Keeps everything in the canvas's own state — nothing is sent anywhere. */
+export const localPersistence: FlowPersistence = {
+  createNode: async () => true,
+  moveNode: async () => true,
+  deleteNode: async () => true,
+  createConnection: async (c) => ({ id: c.id }),
+  rewireConnection: async () => ({ deleted: false }),
+  deleteConnection: async () => true,
+  reset: async () => true,
+  saveViewMode: async () => {},
+  submit: async () => true,
+};
+
+export interface CanvasGraph {
+  nodes: { id: string; label: string; nodeType: string; positionX: number; positionY: number }[];
+  connections: { id: string; sourceNodeId: string; targetNodeId: string; connectionType: ConnectionKind }[];
+}
+
 const EDGE_COLOR: Record<ConnectionKind, string> = {
   DEFAULT: "var(--teal)",
   YES: "var(--success)",
@@ -67,32 +152,57 @@ function impliedConnectionType(node: Pick<FlowNodeVM, "decision" | "nodeType">, 
 
 export function FlowBuilderCanvas({
   submissionId,
+  persistence,
   questOrder,
   questLabel,
   scenarioLine,
   nodeLibrary,
+  library,
+  rubric,
   resultHref,
-  baseMax,
   initialNodes,
   initialConnections,
   initialRemainingSeconds,
   initialViewMode,
+  sandbox = false,
+  showCheck = true,
+  showSubmit = true,
+  onSubmitted,
+  onGraphChange,
+  heightClassName = "h-[calc(100vh-61px)]",
 }: {
-  submissionId: string;
+  /** The participant's submission; its nodes and connections are saved through /api/quest2/*. */
+  submissionId?: string;
+  /** Replaces the API — the builder passes localPersistence. */
+  persistence?: FlowPersistence;
   questOrder: number;
   questLabel: string;
   scenarioLine: string;
+  /** The canvas sidebar — the flow question's palette. */
   nodeLibrary: NodeLibItem[];
-  resultHref: string;
-  baseMax: number;
+  /** The whole case node library, to map what's on the canvas onto the rubric's node keys. */
+  library: LibraryNode[];
+  rubric: FlowRubric;
+  resultHref?: string;
   initialNodes: { id: string; label: string; nodeType: string; positionX: number; positionY: number }[];
   initialConnections: { id: string; sourceNodeId: string; targetNodeId: string; connectionType: string }[];
-  initialRemainingSeconds: number;
+  /** Null for a quest without a timer. */
+  initialRemainingSeconds: number | null;
   initialViewMode: FlowViewMode;
+  /** An admin's canvas (the builder): no focus tracking, nothing logged. */
+  sandbox?: boolean;
+  showCheck?: boolean;
+  showSubmit?: boolean;
+  /** Called after a successful submit instead of going to `resultHref`. */
+  onSubmitted?: (graph: CanvasGraph) => void;
+  /** Reports the drawn graph whenever it changes. */
+  onGraphChange?: (graph: CanvasGraph) => void;
+  heightClassName?: string;
 }) {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
-  const validate = getValidatorForOrder(questOrder);
+  const timed = initialRemainingSeconds !== null;
+  const [store] = useState<FlowPersistence>(() => persistence ?? apiPersistence(submissionId ?? ""));
 
   const [nodes, setNodes] = useState<FlowNodeVM[]>(
     initialNodes.map((n) => {
@@ -117,8 +227,8 @@ export function FlowBuilderCanvas({
       connectionType: (c.connectionType as ConnectionKind) ?? "DEFAULT",
     }))
   );
-  const [secondsLeft, setSecondsLeft] = useState(initialRemainingSeconds);
-  const [locked, setLocked] = useState(initialRemainingSeconds <= 0);
+  const [secondsLeft, setSecondsLeft] = useState(initialRemainingSeconds ?? 0);
+  const [locked, setLocked] = useState(timed && (initialRemainingSeconds ?? 0) <= 0);
   const [dragState, setDragState] = useState<{
     startX: number;
     startY: number;
@@ -187,17 +297,26 @@ export function FlowBuilderCanvas({
   const connectionsRef = useRef(connections);
   connectionsRef.current = connections;
 
+  const graphOf = (ns: FlowNodeVM[], cs: FlowConnectionVM[]): CanvasGraph => ({
+    nodes: ns.map((n) => ({ id: n.id, label: n.label, nodeType: n.nodeType, positionX: n.x, positionY: n.y })),
+    connections: cs.map((c) => ({ id: c.id, sourceNodeId: c.sourceNodeId, targetNodeId: c.targetNodeId, connectionType: c.connectionType })),
+  });
+
+  const onGraphChangeRef = useRef(onGraphChange);
+  useEffect(() => {
+    onGraphChangeRef.current = onGraphChange;
+  });
+  useEffect(() => {
+    onGraphChangeRef.current?.(graphOf(nodes, connections));
+  }, [nodes, connections]);
+
   async function submitFlow(timeExpired: boolean) {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setLocked(true);
     try {
-      const res = await fetch("/api/quest2/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId, timeExpired }),
-      });
-      if (!res.ok) {
+      const ok = await store.submit(timeExpired);
+      if (!ok) {
         submittingRef.current = false;
         if (timeExpired) {
           flashError("Gagal mengirim flow otomatis — muat ulang halaman ini untuk mencoba lagi.");
@@ -207,7 +326,11 @@ export function FlowBuilderCanvas({
         }
         return;
       }
-      router.push(resultHref);
+      if (onSubmitted) {
+        onSubmitted(graphOf(nodesRef.current, connectionsRef.current));
+        return;
+      }
+      if (resultHref) router.push(resultHref);
       router.refresh();
     } catch {
       submittingRef.current = false;
@@ -221,7 +344,7 @@ export function FlowBuilderCanvas({
   }
 
   useEffect(() => {
-    if (locked) return;
+    if (locked || !timed) return;
     const interval = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
@@ -422,12 +545,7 @@ export function FlowBuilderCanvas({
 
   async function persistMove(nodeId: string, x: number, y: number) {
     try {
-      const res = await fetch(`/api/quest2/node/${nodeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionX: x, positionY: y }),
-      });
-      if (!res.ok) flashError("Gagal menyimpan posisi node — waktu mungkin sudah habis.");
+      if (!(await store.moveNode(nodeId, x, y))) flashError("Gagal menyimpan posisi node — waktu mungkin sudah habis.");
     } catch {
       flashError("Gagal menyimpan posisi node — periksa koneksi internet kamu.");
     }
@@ -455,17 +573,12 @@ export function FlowBuilderCanvas({
       { id: tempId, sourceNodeId, targetNodeId, connectionType, sideFrom: sides?.sideFrom, sideTo: sides?.sideTo },
     ]);
     try {
-      const res = await fetch("/api/quest2/connection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: tempId, submissionId, sourceNodeId, targetNodeId, connectionType }),
-      });
-      if (!res.ok) {
+      const connection = await store.createConnection({ id: tempId, sourceNodeId, targetNodeId, connectionType });
+      if (!connection) {
         setConnections((cs) => cs.filter((c) => c.id !== tempId));
         flashError("Gagal menyambungkan node — coba lagi.");
         return;
       }
-      const { connection } = await res.json();
       if (connection.id !== tempId) {
         setConnections((cs) => cs.map((c) => (c.id === tempId ? { ...c, id: connection.id } : c)));
       }
@@ -490,17 +603,12 @@ export function FlowBuilderCanvas({
     setConnections((cs) => cs.map((c) => (c.id === connectionId ? { ...c, targetNodeId, sideFrom: undefined, sideTo: undefined } : c)));
     clearCustomPath(connectionId); // the manual bend was tuned for the old target — stale once it points somewhere new
     try {
-      const res = await fetch(`/api/quest2/connection/${connectionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetNodeId }),
-      });
-      if (!res.ok) {
+      const data = await store.rewireConnection(connectionId, targetNodeId);
+      if (!data) {
         setConnections((cs) => cs.map((c) => (c.id === connectionId ? previous : c)));
         flashError("Gagal memindahkan sambungan — coba lagi.");
         return;
       }
-      const data = await res.json();
       if (data.deleted) {
         setConnections((cs) => cs.filter((c) => c.id !== connectionId));
       }
@@ -517,8 +625,7 @@ export function FlowBuilderCanvas({
     clearCustomPath(connectionId);
     setSelectedConnectionId((id) => (id === connectionId ? null : id));
     try {
-      const res = await fetch(`/api/quest2/connection/${connectionId}`, { method: "DELETE" });
-      if (!res.ok) {
+      if (!(await store.deleteConnection(connectionId))) {
         setConnections((cs) => [...cs, previous]);
         flashError("Gagal memutus sambungan — coba lagi.");
       }
@@ -543,12 +650,7 @@ export function FlowBuilderCanvas({
       { id, kind: def.kind, label: def.label, icon: def.icon, nodeType: def.nodeType, decision: Boolean(def.decision), x, y },
     ]);
     try {
-      const res = await fetch("/api/quest2/node", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, submissionId, label: def.label, nodeType: def.nodeType, positionX: x, positionY: y }),
-      });
-      if (!res.ok) {
+      if (!(await store.createNode({ id, label: def.label, nodeType: def.nodeType, positionX: x, positionY: y }))) {
         setNodes((ns) => ns.filter((n) => n.id !== id));
         flashError("Gagal menambah node — waktu mungkin sudah habis.");
       }
@@ -563,12 +665,7 @@ export function FlowBuilderCanvas({
     if (nodes.length === 0) return;
     setResetting(true);
     try {
-      const res = await fetch("/api/quest2/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId }),
-      });
-      if (!res.ok) {
+      if (!(await store.reset())) {
         flashError("Gagal mereset flow — coba lagi.");
         return;
       }
@@ -603,8 +700,7 @@ export function FlowBuilderCanvas({
     }
 
     try {
-      const res = await fetch(`/api/quest2/node/${id}`, { method: "DELETE" });
-      if (!res.ok) {
+      if (!(await store.deleteNode(id))) {
         rollback();
         flashError("Gagal menghapus node — waktu mungkin sudah habis.");
       }
@@ -640,11 +736,9 @@ export function FlowBuilderCanvas({
   }, [showHelp]);
 
   function runCheck() {
-    const result = validate(
-      nodes.map((n) => ({ id: n.id, label: n.label })),
-      connections
-    );
-    setCheckMsg(`${result.message}\n\nEstimasi sementara: ${result.totalScore}/${baseMax} (belum termasuk alasan)`);
+    const result = scoreFlow(rubric, graphFromFlow(nodes, connections, library));
+    const baseMax = Object.values(result.max).reduce((sum, m) => sum + m, 0);
+    setCheckMsg(`${result.message}\n\nEstimasi sementara: ${result.total}/${baseMax} (belum termasuk alasan)`);
   }
 
   /** Resolves the exact exit/entry port + side for a connection: decision nodes are structurally fixed, manually-dragged horizontal connections keep the side the user chose, everything else falls back to the nearest-side heuristic. */
@@ -758,11 +852,7 @@ export function FlowBuilderCanvas({
     );
     setNodes((ns) => ns.map((n) => (positions[n.id] ? { ...n, ...positions[n.id] } : n)));
     try {
-      await fetch("/api/participant/view-mode", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ viewMode: next }),
-      });
+      await store.saveViewMode(next);
     } catch {
       // Best-effort — preference just won't persist to the next session.
     }
@@ -849,8 +939,8 @@ export function FlowBuilderCanvas({
   const timeLow = secondsLeft <= 30;
 
   return (
-    <FocusGuard questOrder={questOrder}>
-    <div className="flex h-[calc(100vh-61px)] flex-col">
+    <Guard sandbox={sandbox} questOrder={questOrder}>
+    <div className={`flex ${heightClassName} flex-col`}>
       {locked && (
         <div className="border-b border-danger bg-[rgba(242,112,92,0.15)] px-4 py-2.5 text-center text-[13.5px] font-semibold text-[#FFD9D2]">
           ⏱️ Waktu habis — flow kamu otomatis dikunci dan dikirim untuk dinilai.
@@ -883,12 +973,14 @@ export function FlowBuilderCanvas({
               → Horizontal
             </button>
           </div>
-          <div className="flex items-center gap-2 rounded-[20px] border border-border-light bg-surface2 px-3.5 py-1.5">
-            <span className="text-[11px] uppercase tracking-[0.5px] text-muted2">Sisa Waktu</span>
-            <span className={`font-mono text-[16px] font-bold tabular-nums ${timeLow ? "text-danger" : "text-gold"}`}>
-              {minutes}:{String(secs).padStart(2, "0")}
-            </span>
-          </div>
+          {timed && (
+            <div className="flex items-center gap-2 rounded-[20px] border border-border-light bg-surface2 px-3.5 py-1.5">
+              <span className="text-[11px] uppercase tracking-[0.5px] text-muted2">Sisa Waktu</span>
+              <span className={`font-mono text-[16px] font-bold tabular-nums ${timeLow ? "text-danger" : "text-gold"}`}>
+                {minutes}:{String(secs).padStart(2, "0")}
+              </span>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button
               variant="ghost"
@@ -898,12 +990,16 @@ export function FlowBuilderCanvas({
             >
               {resetting ? "Mereset…" : "Reset Flow"}
             </Button>
-            <Button variant="ghost" className="!px-3.5 !py-2 !text-[13px]" onClick={runCheck} disabled={locked}>
-              Cek Flow
-            </Button>
-            <Button className="!px-3.5 !py-2 !text-[13px]" onClick={() => submitFlow(false)} disabled={locked}>
-              Kirim Flow →
-            </Button>
+            {showCheck && (
+              <Button variant="ghost" className="!px-3.5 !py-2 !text-[13px]" onClick={runCheck} disabled={locked}>
+                Cek Flow
+              </Button>
+            )}
+            {showSubmit && (
+              <Button className="!px-3.5 !py-2 !text-[13px]" onClick={() => submitFlow(false)} disabled={locked}>
+                Kirim Flow →
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1398,6 +1494,11 @@ export function FlowBuilderCanvas({
         </div>
       )}
     </div>
-    </FocusGuard>
+    </Guard>
   );
+}
+
+/** Participants' canvases count tab switches (see FocusGuard); the builder's sandbox doesn't. */
+function Guard({ sandbox, questOrder, children }: { sandbox: boolean; questOrder: number; children: ReactNode }) {
+  return sandbox ? <>{children}</> : <FocusGuard questOrder={questOrder}>{children}</FocusGuard>;
 }

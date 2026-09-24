@@ -11,6 +11,7 @@ const bodySchema = z.object({
     .min(3, "Kode minimal 3 karakter")
     .max(30)
     .regex(/^[A-Za-z0-9-]+$/, "Kode hanya boleh huruf, angka, dan tanda -"),
+  scenarioId: z.string().uuid("Pilih kasus untuk session ini"),
 });
 
 export async function POST(request: Request) {
@@ -29,11 +30,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Kode session sudah dipakai — pilih kode lain." }, { status: 409 });
   }
 
-  const session = await createNewSession({
-    title: parsed.data.title,
-    sessionCode: parsed.data.sessionCode,
-    createdBy: admin.id,
-  });
+  const scenario = await prisma.scenario.findUnique({ where: { id: parsed.data.scenarioId } });
+  if (!scenario) return NextResponse.json({ error: "Kasus tidak ditemukan." }, { status: 404 });
+
+  let session;
+  try {
+    session = await createNewSession({
+      title: parsed.data.title,
+      sessionCode: parsed.data.sessionCode,
+      createdBy: admin.id,
+      scenarioId: scenario.id,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: `Kasus ini belum bisa dipakai: ${(e as Error).message}` }, { status: 400 });
+  }
 
   return NextResponse.json({ session: { id: session.id, title: session.title, sessionCode: session.sessionCode } });
 }

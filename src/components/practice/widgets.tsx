@@ -2,8 +2,12 @@
 
 import { useState, type ReactNode } from "react";
 import { checkRules, edgeText, parseEdge } from "@/lib/practice/flowRules";
-import type { FixerWidget, PlanWidget, Widget } from "@/lib/practice/schema";
+import type { NodeDictionary } from "@/lib/practice/nodes";
+import type { FixerWidget, PlanWidget } from "@/lib/practice/schema";
+import type { ModuleWidget } from "@/lib/content/case";
+import { RichText } from "@/components/RichText";
 import { PracticeFlowDiagram } from "./PracticeFlowDiagram";
+import { usePracticeNodes } from "./nodesContext";
 import s from "./practice.module.css";
 
 /**
@@ -25,12 +29,15 @@ export function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-function fixerPasses(w: FixerWidget, on: string[]) {
-  return checkRules(w.rules, w.nodes, on, w.start).every((r) => r.pass);
+/** Anything a Modul Latihan page renders: a module's widgets (with markdown text) or a plan's main-exercise widgets. */
+export type Widget = ModuleWidget | PlanWidget;
+
+function fixerPasses(w: FixerWidget, on: string[], dict: NodeDictionary) {
+  return checkRules(w.rules, w.nodes, on, w.start, dict).every((r) => r.pass);
 }
 
 /** Status a widget starts in — read-only widgets count as done, and a previously saved answer counts as written. */
-export function initialWidgetStatus(widget: Widget, savedAnswer?: string): WidgetStatus {
+export function initialWidgetStatus(widget: Widget, dict: NodeDictionary, savedAnswer?: string): WidgetStatus {
   switch (widget.type) {
     case "text":
     case "rule":
@@ -39,7 +46,7 @@ export function initialWidgetStatus(widget: Widget, savedAnswer?: string): Widge
     case "write":
       return savedAnswer ? DONE : NOT_STARTED;
     case "fixer":
-      return { attempted: false, complete: fixerPasses(widget, widget.initial) };
+      return { attempted: false, complete: fixerPasses(widget, widget.initial, dict) };
     default:
       return NOT_STARTED;
   }
@@ -62,8 +69,7 @@ export function PracticeWidget({
 }) {
   switch (widget.type) {
     case "text":
-      // Trusted, code-authored prose from content.ts — the plan schema never lets stored data reach this branch.
-      return <div className={s.proseBlock} dangerouslySetInnerHTML={{ __html: widget.html }} />;
+      return <RichText source={widget.md} className={s.proseBlock} />;
     case "rule":
       return <div className={s.ruleBox}>{widget.text}</div>;
     case "flows":
@@ -444,18 +450,19 @@ const KIND_BADGE = { Y: { cls: s.badgeY, text: "Ya" }, N: { cls: s.badgeN, text:
 
 /** The core exercise: switch connections on and off until every rule holds. */
 function FixerWidgetView({ widget, onStatus }: Props<"fixer">) {
+  const dict = usePracticeNodes();
   const all = [...new Set([...widget.initial, ...(widget.extra ?? [])])];
   const [on, setOn] = useState<string[]>(widget.initial);
   const [touched, setTouched] = useState(false);
   const [showedSolution, setShowedSolution] = useState(false);
 
   const active = all.filter((k) => on.includes(k));
-  const results = checkRules(widget.rules, widget.nodes, active, widget.start);
+  const results = checkRules(widget.rules, widget.nodes, active, widget.start, dict);
   const pass = results.every((r) => r.pass);
 
   function apply(next: string[], wasTouched: boolean) {
     setOn(next);
-    onStatus({ attempted: wasTouched, complete: fixerPasses(widget, next) });
+    onStatus({ attempted: wasTouched, complete: fixerPasses(widget, next, dict) });
   }
   function toggle(key: string) {
     setTouched(true);
@@ -479,7 +486,7 @@ function FixerWidgetView({ widget, onStatus }: Props<"fixer">) {
                 return (
                   <button key={key} type="button" className={s.tog} aria-pressed={on.includes(key)} onClick={() => toggle(key)}>
                     <span className={s.sw} aria-hidden="true" />
-                    <span>{edgeText(e)}</span>
+                    <span>{edgeText(e, dict)}</span>
                     {badge ? <span className={cx(s.badge, badge.cls)}>{badge.text}</span> : null}
                   </button>
                 );
