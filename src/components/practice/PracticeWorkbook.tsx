@@ -59,6 +59,7 @@ export function PracticeWorkbook({
   initialCompleted,
   initialAnswers,
   mode,
+  embedded = false,
 }: {
   plan: ResolvedPlan;
   /** The case's modules; the plan picks which of them this page shows, and in what order. */
@@ -70,6 +71,8 @@ export function PracticeWorkbook({
   initialCompleted: string[];
   initialAnswers: Record<string, string>;
   mode: Mode;
+  /** Rendered inside another scrolling panel (the builder's preview) rather than under the app's top bar. */
+  embedded?: boolean;
 }) {
   const { content } = plan;
   const dict = useMemo(() => nodeDictionary(nodes), [nodes]);
@@ -154,7 +157,7 @@ export function PracticeWorkbook({
 
   return (
     <PracticeNodesProvider value={dict}>
-    <div className={s.root}>
+    <div className={cx(s.root, embedded && s.embedded)}>
       <div className={s.shell}>
         <nav className={s.path} aria-label="Jalur belajar">
           <div className={s.brand}>Modul Latihan Flow</div>

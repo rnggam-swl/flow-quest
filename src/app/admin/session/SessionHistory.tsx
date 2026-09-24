@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input } from "@/components/ui";
+import { LOCK_LABELS, type LockReason } from "@/lib/content/versionLock";
+import { UpgradeSessionButton } from "@/app/admin/konten/ContentActions";
 
 interface SessionRow {
   id: string;
@@ -13,6 +15,8 @@ interface SessionRow {
   participantCount: number;
   caseTitle: string;
   caseVersion: number | null;
+  latestVersion: number | null;
+  lock: LockReason | null;
 }
 
 interface CaseOption {
@@ -139,6 +143,15 @@ export function SessionHistory({
                 <td className="px-4 py-2.5 text-muted2">
                   {s.caseTitle}
                   {s.caseVersion !== null && <span className="text-[11.5px]"> · v{s.caseVersion}</span>}
+                  {s.lock ? (
+                    <span className="block text-[11.5px] text-gold" title="Versi session ini tidak akan berubah">
+                      🔒 {LOCK_LABELS[s.lock]}
+                    </span>
+                  ) : s.caseVersion !== null && s.latestVersion !== null && s.latestVersion > s.caseVersion ? (
+                    <span className="mt-1 block">
+                      <UpgradeSessionButton sessionId={s.id} toVersion={s.latestVersion} />
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-2.5 text-muted2">{s.status}</td>
                 <td className="px-4 py-2.5 text-muted2">{s.participantCount}</td>

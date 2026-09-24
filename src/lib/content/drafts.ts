@@ -3,7 +3,8 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { CaseContent } from "@/lib/content/case";
 import { findDraftProblems, type DraftProblem } from "@/lib/content/draftProblems";
-import { canonicalJson, latestPublished, writePublishedVersion } from "@/lib/content/importCase";
+import { canonicalJson, latestPublished, repinSession, writePublishedVersion } from "@/lib/content/importCase";
+import { UNLOCKED_SESSION_WHERE } from "@/lib/content/versionLock";
 
 /**
  * The builder's working copy of a case. Each case has at most one draft,
@@ -39,22 +40,23 @@ export interface EditableCase {
   revision: string;
   publishedVersion: number | null;
   problems: DraftProblem[];
-  /** Sessions still on an older version with no participant progress yet — publishing can move them. */
+  /** Sessions of the case that aren't locked to their version (see versionLock.ts) — publishing can move them onto the new one. */
   idleSessions: number;
+  /** Sessions of the case locked to their version: active, or with participant progress. */
+  lockedSessions: number;
 }
 
-/** Sessions of the case, on a version older than `exceptVersionId`, where nobody has started a quest. */
-async function idleSessionIds(scenarioId: string, exceptVersionId?: string) {
+/** Sessions of the case that aren't locked to their version. */
+async function idleSessionIds(scenarioId: string) {
   const sessions = await prisma.session.findMany({
-    where: {
-      ScenarioVersion: { scenarioId, status: "PUBLISHED" },
-      ...(exceptVersionId ? { NOT: { scenarioVersionId: exceptVersionId } } : {}),
-      SessionParticipant: { none: { QuestAttempt: { some: {} } } },
-      Team: { none: { FlowSubmission: { some: {} } } },
-    },
+    where: { ScenarioVersion: { scenarioId, status: "PUBLISHED" }, ...UNLOCKED_SESSION_WHERE },
     select: { id: true },
   });
   return sessions.map((s) => s.id);
+}
+
+async function lockedSessionCount(scenarioId: string) {
+  return prisma.session.count({ where: { ScenarioVersion: { scenarioId, status: "PUBLISHED" }, NOT: UNLOCKED_SESSION_WHERE } });
 }
 
 export async function loadEditableCase(caseKey: string): Promise<EditableCase | null> {
@@ -64,6 +66,8 @@ export async function loadEditableCase(caseKey: string): Promise<EditableCase | 
   const row = draft ?? published;
   if (!row) return null;
   const { problems } = findDraftProblems(row.content);
+  // Publishing puts every session behind the new version, including those on today's latest.
+  const [idle, locked] = await Promise.all([idleSessionIds(scenario.id), lockedSessionCount(scenario.id)]);
   return {
     scenarioId: scenario.id,
     key: caseKey,
@@ -74,7 +78,8 @@ export async function loadEditableCase(caseKey: string): Promise<EditableCase | 
     revision: contentRevision(row.content),
     publishedVersion: published?.version ?? null,
     problems,
-    idleSessions: (await idleSessionIds(scenario.id, published?.id)).length,
+    idleSessions: idle.length,
+    lockedSessions: locked,
   };
 }
 
@@ -116,12 +121,22 @@ export async function saveDraft(params: {
   return { ok: true, value: { revision: contentRevision(content), problems: findDraftProblems(content).problems } };
 }
 
-/** Throws the draft away; the builder falls back to the latest published version. */
-export async function discardDraft(caseKey: string): Promise<DraftResult<{ revision: string | null }>> {
+/**
+ * Throws the draft away; the builder falls back to the latest published
+ * version. A case that was never published has nothing to fall back to, so
+ * discarding its draft deletes the case itself.
+ */
+export async function discardDraft(caseKey: string): Promise<DraftResult<{ revision: string | null; deletedCase: boolean }>> {
   const state = await currentState(caseKey);
   if (!state) return { ok: false, status: 404, error: "Kasus tidak ditemukan" };
+  if (!state.published) {
+    const sessions = await prisma.session.count({ where: { ScenarioVersion: { scenarioId: state.scenario.id } } });
+    if (sessions) return { ok: false, status: 409, error: "Kasus ini sudah dipakai session, jadi tidak bisa dihapus." };
+    await prisma.scenario.delete({ where: { id: state.scenario.id } });
+    return { ok: true, value: { revision: null, deletedCase: true } };
+  }
   if (state.draft) await prisma.scenarioVersion.delete({ where: { id: state.draft.id } });
-  return { ok: true, value: { revision: state.published ? contentRevision(state.published.content) : null } };
+  return { ok: true, value: { revision: contentRevision(state.published.content), deletedCase: false } };
 }
 
 export async function publishDraft(params: {
@@ -150,9 +165,10 @@ export async function publishDraft(params: {
   return prisma.$transaction(async (tx) => {
     const { created } = await writePublishedVersion(tx, state.scenario.id, content, { note: params.note ?? null, createdBy: params.userId });
     await tx.scenarioVersion.delete({ where: { id: draftId } });
-    const movedSessions = idle.length
-      ? (await tx.session.updateMany({ where: { id: { in: idle } }, data: { scenarioVersionId: created.id } })).count
-      : 0;
+    // Re-checked inside the transaction: a session may have started since `idle` was read.
+    const movable = idle.length ? await tx.session.findMany({ where: { id: { in: idle }, ...UNLOCKED_SESSION_WHERE }, select: { id: true } }) : [];
+    for (const s of movable) await repinSession(tx, s.id, { id: created.id, scenarioId: state.scenario.id, content });
+    const movedSessions = movable.length;
     return { ok: true as const, value: { status: "published" as const, version: created.version, movedSessions } };
   });
 }
@@ -165,6 +181,7 @@ export interface CaseListItem {
   hasDraft: boolean;
   draftBy: string | null;
   sessions: number;
+  modules: number;
   quests: { order: number; title: string; questions: number; types: string[] }[];
 }
 
@@ -193,6 +210,7 @@ export async function listEditableCases(): Promise<CaseListItem[]> {
       hasDraft: Boolean(draft),
       draftBy: draft?.User?.displayName ?? null,
       sessions: s.ScenarioVersion.reduce((n, v) => n + v._count.Session, 0),
+      modules: Array.isArray(content?.modules) ? content.modules.length : 0,
       quests: (content?.quests ?? []).map((q) => ({ order: q.order, title: q.title, questions: q.questions.length, types: q.questions.map((x) => x.type) })),
     };
   });

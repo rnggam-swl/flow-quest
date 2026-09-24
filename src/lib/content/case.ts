@@ -101,9 +101,12 @@ function findFixerProblems(w: FixerWidget, where: string, library: Map<string, C
   if (!w.nodes.includes(w.start)) p.push(`${where}: start "${w.start}" tidak ada di daftar node`);
   const unknownRules = w.rules.filter((r) => !isKnownRule(r));
   if (unknownRules.length) p.push(`${where}: aturan tidak dikenal: ${unknownRules.join(", ")}`);
+  const ruleNodes = w.rules.filter(isKnownRule).flatMap((r) => (r.startsWith("not:") ? [] : r.split(":").slice(1)));
+  const offCanvas = [...new Set(ruleNodes)].filter((k) => !w.nodes.includes(k));
+  if (offCanvas.length) p.push(`${where}: aturan memakai node yang tidak ada di daftar node latihan: ${offCanvas.join(", ")}`);
   const unreachable = w.solution.filter((e) => !available.has(e));
   if (unreachable.length) p.push(`${where}: contoh jawaban memakai sambungan yang tidak bisa dinyalakan: ${unreachable.join(", ")}`);
-  if (unknown.length || unknownRules.length) return p;
+  if (unknown.length || unknownRules.length || offCanvas.length) return p;
 
   const graphOf = (on: string[]): RubricGraph => {
     const edges = on.map((s) => {
@@ -138,20 +141,33 @@ function findWidgetProblems(w: ModuleWidget | PlanWidget, where: string, library
       break;
     }
     case "mcq":
+      if (!w.q.trim()) p.push(`${where}: pertanyaan belum diisi`);
       if (!w.options.some((o) => o.ok)) p.push(`${where}: tidak ada opsi yang benar`);
+      if (w.options.some((o) => !o.t.trim())) p.push(`${where}: ada opsi yang masih kosong`);
+      break;
+    case "poll":
+    case "write":
+    case "spot":
+      if (!w.q.trim()) p.push(`${where}: pertanyaan belum diisi`);
+      break;
+    case "rule":
+      if (!w.text.trim()) p.push(`${where}: teks aturan belum diisi`);
       break;
     case "goalpick":
       w.scenarios.forEach((s, i) => {
+        if (!s.text.trim()) p.push(`${where}: skenario ${i + 1} belum diisi`);
         if (s.goal >= s.items.length) p.push(`${where}: skenario ${i + 1} menunjuk jawaban di luar daftar`);
       });
       break;
     case "decisions":
       w.items.forEach((it, i) => {
+        if (!it.q.trim()) p.push(`${where}: keputusan ${i + 1} belum punya pertanyaan`);
         if (![...it.ya, ...it.tidak].every((o) => it.options.includes(o))) p.push(`${where}: keputusan ${i + 1} punya jawaban yang tidak ada di pilihan`);
       });
       break;
     case "planner":
       w.rows.forEach((r, i) => {
+        if (!r.problem.trim()) p.push(`${where}: baris ${i + 1} belum punya masalah`);
         if (!r.check.every((o) => w.checkOptions.includes(o)) || !r.go.every((o) => w.goOptions.includes(o)))
           p.push(`${where}: baris ${i + 1} punya jawaban yang tidak ada di pilihan`);
       });

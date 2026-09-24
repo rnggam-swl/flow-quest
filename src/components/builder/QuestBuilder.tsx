@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CaseContent, QuestContent } from "@/lib/content/case";
-import { findDraftProblems, type DraftProblem } from "@/lib/content/draftProblems";
+import { addQuest, libraryNodesFor, questNodeKeys } from "@/lib/content/caseEdit";
+import { findDraftProblems, type CaseSection, type DraftProblem } from "@/lib/content/draftProblems";
 import { changeQuestionType, duplicateQuestion, newQuestion } from "@/lib/content/builderDefaults";
 import type { Question, QuestionType } from "@/lib/content/questions";
 import { AutoTextarea, BuilderProvider, MediaEditor, cx, moveItem, removeAt, type UploadResult } from "./fields";
@@ -11,15 +12,20 @@ import { BooleanEditor, ChoiceEditor, GroupingEditor, HotspotEditor, MatchingEdi
 import { BranchingEditor } from "./BranchingEditor";
 import { FlowQuestionEditor } from "./FlowQuestionEditor";
 import { QuestionList } from "./QuestionList";
-import { RightPanel, type PanelTab } from "./RightPanel";
+import { ProblemsPanel, RightPanel, type PanelTab } from "./RightPanel";
 import { QuestPlay, QuestionPreview } from "./PlayPane";
+import { CaseEditor, CaseSidebar } from "./CaseEditor";
+import { CLOSING, ModuleEditor, ModuleSidebar } from "./ModuleEditor";
+import { downloadJson } from "./transfer";
 import s from "./builder.module.css";
 
 /**
- * The question builder: one quest of one case at a time, laid out like the
- * Formulir prototype — question list, editor, settings panel — over the whole
- * case's content held in memory. Saving writes the case's draft; publishing
- * turns the saved draft into the case's next version (see drafts.ts).
+ * The content builder, over the whole case held in memory, in three views:
+ * Kasus (story, node library, the quest list), Quest (one quest's questions,
+ * laid out like the Formulir prototype — question list, editor, settings
+ * panel) and Modul (Modul Latihan modules and their widgets). Saving writes
+ * the case's draft; publishing turns the saved draft into the case's next
+ * version (see drafts.ts).
  */
 
 export interface BuilderInitial {
@@ -30,8 +36,10 @@ export interface BuilderInitial {
   fromDraft: boolean;
   publishedVersion: number | null;
   idleSessions: number;
+  lockedSessions: number;
 }
 
+export type BuilderView = "kasus" | "quest" | "modul";
 type Mode = "build" | "preview" | "play";
 type Dialog = null | "publish" | "discard" | "conflict";
 
@@ -90,7 +98,19 @@ function QuestionEditor({ question, onChange }: { question: Question; onChange: 
   );
 }
 
-export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial: BuilderInitial; initialQuest: number; uploadEnabled: boolean }) {
+export function QuestBuilder({
+  initial,
+  initialQuest,
+  initialView = "quest",
+  initialModule,
+  uploadEnabled,
+}: {
+  initial: BuilderInitial;
+  initialQuest: number;
+  initialView?: BuilderView;
+  initialModule?: string;
+  uploadEnabled: boolean;
+}) {
   const router = useRouter();
   const [content, setContent] = useState<CaseContent>(initial.content);
   const [revision, setRevision] = useState(initial.revision);
@@ -98,6 +118,9 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
   const [hasDraft, setHasDraft] = useState(initial.fromDraft);
   const [questOrder, setQuestOrder] = useState(() => (initial.content.quests.some((q) => q.order === initialQuest) ? initialQuest : (initial.content.quests[0]?.order ?? 1)));
   const [selected, setSelected] = useState(0);
+  const [view, setView] = useState<BuilderView>(initialView);
+  const [caseSection, setCaseSection] = useState<CaseSection>("info");
+  const [moduleKey, setModuleKey] = useState(() => (initial.content.modules.some((m) => m.key === initialModule) ? initialModule! : (initial.content.modules[0]?.key ?? CLOSING)));
   const [mode, setMode] = useState<Mode>("build");
   const [tab, setTab] = useState<PanelTab>("soal");
   const [busy, setBusy] = useState<null | "save" | "publish" | "discard">(null);
@@ -132,12 +155,20 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
     };
   }, [uploadEnabled, initial.caseKey]);
 
-  // Keep the quest in the URL so a reload (or a publish) comes back to it.
+  // Keep the view, quest and module in the URL so a reload (or a publish) comes back to them.
   useEffect(() => {
     const url = new URL(window.location.href);
+    url.searchParams.set("view", view);
     url.searchParams.set("quest", String(questOrder));
+    if (view === "modul" && moduleKey !== CLOSING) url.searchParams.set("modul", moduleKey);
+    else url.searchParams.delete("modul");
     window.history.replaceState(window.history.state, "", url);
-  }, [questOrder]);
+  }, [view, questOrder, moduleKey]);
+
+  function openView(v: BuilderView) {
+    setView(v);
+    setMode("build");
+  }
 
   useEffect(() => {
     if (!dirty) return;
@@ -232,7 +263,12 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
     setBusy(null);
     setDialog(null);
     if (!res?.ok) {
-      toast("Gagal membuang draf.", "error");
+      toast(res?.data?.error ?? "Gagal membuang draf.", "error");
+      return;
+    }
+    if (res.data?.deletedCase) {
+      setSavedJson(json);
+      router.push("/admin/konten");
       return;
     }
     router.refresh();
@@ -240,7 +276,19 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
 
   function jump(p: DraftProblem) {
     setMode("build");
+    if (p.module !== undefined || p.section === "closing") {
+      setView("modul");
+      if (p.module && content.modules.some((m) => m.key === p.module)) setModuleKey(p.module);
+      else if (p.section === "closing") setModuleKey(CLOSING);
+      return;
+    }
+    if (!p.quest) {
+      setView("kasus");
+      setCaseSection(p.section ?? "info");
+      return;
+    }
     if (p.quest && content.quests.some((q) => q.order === p.quest)) {
+      setView("quest");
       setQuestOrder(p.quest);
       const qs = content.quests.find((q) => q.order === p.quest)!.questions;
       const i = p.question ? qs.findIndex((q) => q.id === p.question) : -1;
@@ -253,13 +301,8 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
 
   const withProblems = new Set(problems.filter((p) => p.quest === questOrder && p.question).map((p) => p.question!));
 
-  if (!quest) {
-    return (
-      <div className={s.root}>
-        <div className={s.empty}>Kasus ini belum punya quest. Tambah quest lewat file kasus (editor quest menyusul di Fase 4).</div>
-      </div>
-    );
-  }
+  const neverPublished = initial.publishedVersion === null;
+  const hasTabs = view === "quest" || view === "modul";
 
   return (
     <BuilderProvider value={{ caseKey: initial.caseKey, nodes: content.nodes, upload, toast }}>
@@ -270,23 +313,48 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
           </a>
           <span className={s.hdiv} />
           <span className={s.caseTitle} title={content.title}>
-            {content.title}
+            {content.title || "(tanpa judul)"}
           </span>
-          <select
-            className={s.questSel}
-            value={questOrder}
-            onChange={(e) => {
-              setQuestOrder(Number(e.target.value));
-              setSelected(0);
-            }}
-            aria-label="Quest"
-          >
-            {content.quests.map((q) => (
-              <option key={q.order} value={q.order}>
-                Quest {q.order} · {q.title}
-              </option>
-            ))}
-          </select>
+          <div className={s.viewNav} role="tablist" aria-label="Bagian builder">
+            {(
+              [
+                ["kasus", "Kasus"],
+                ["quest", "Quest"],
+                ["modul", "Modul"],
+              ] as const
+            ).map(([v, lbl]) => {
+              const n = problems.filter((p) => (v === "quest" ? p.quest : v === "modul" ? p.module !== undefined || p.section === "closing" : !p.quest && p.module === undefined && p.section !== "closing")).length;
+              return (
+                <button key={v} type="button" role="tab" aria-selected={view === v} className={cx(s.viewBtn, view === v && s.viewBtnActive)} onClick={() => openView(v)}>
+                  {lbl}
+                  {n > 0 && <span className={s.viewCount}>{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {view === "quest" && (
+            <select
+              className={s.questSel}
+              value={questOrder}
+              onChange={(e) => {
+                if (e.target.value === "new") {
+                  setContent((c) => addQuest(c));
+                  setQuestOrder(content.quests.length + 1);
+                } else setQuestOrder(Number(e.target.value));
+                setSelected(0);
+              }}
+              aria-label="Quest"
+            >
+              {[...content.quests]
+                .sort((a, b) => a.order - b.order)
+                .map((q) => (
+                  <option key={q.order} value={q.order}>
+                    Quest {q.order} · {q.title}
+                  </option>
+                ))}
+              <option value="new">＋ Quest baru</option>
+            </select>
+          )}
           <div className={s.hdrRight}>
             <span className={cx(s.status, dirty && s.statusDirty)}>
               {dirty ? "● Belum disimpan" : hasDraft ? "Draf tersimpan" : initial.publishedVersion ? `Versi ${initial.publishedVersion} (terbit)` : ""}
@@ -298,6 +366,7 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
             ) : (
               <span className={s.okChip}>✓ Siap publish</span>
             )}
+            {hasTabs && (
             <div className={s.tabGrp} role="tablist">
               {(
                 [
@@ -305,7 +374,7 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
                   ["preview", "Preview"],
                   ["play", "Play"],
                 ] as const
-              ).map(([m, lbl]) => (
+              ).filter(([m]) => view === "quest" || m !== "play").map(([m, lbl]) => (
                 <button
                   key={m}
                   type="button"
@@ -321,6 +390,7 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
                 </button>
               ))}
             </div>
+            )}
             <button type="button" className={cx(s.btn, s.btnGhost)} disabled={busy !== null || (!dirty && hasDraft)} onClick={() => void save()} title="Ctrl+S">
               {busy === "save" ? "Menyimpan…" : "Simpan"}
             </button>
@@ -330,6 +400,40 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
           </div>
         </header>
 
+        {view === "kasus" && (
+          <div className={s.workspace}>
+            <CaseSidebar section={caseSection} onSection={setCaseSection} problems={problems} />
+            <main className={s.canvas}>
+              <CaseEditor
+                content={content}
+                section={caseSection}
+                onChange={setContent}
+                onOpenQuest={(order) => {
+                  setQuestOrder(order);
+                  setSelected(0);
+                  openView("quest");
+                }}
+                canDiscard={hasDraft}
+                neverPublished={neverPublished}
+                onDiscard={() => setDialog("discard")}
+              />
+            </main>
+            <ProblemsPanel problems={problems} onJump={jump} />
+          </div>
+        )}
+
+        {view === "modul" && (
+          <div className={s.workspace}>
+            {mode === "build" && <ModuleSidebar content={content} selected={moduleKey} onSelect={setModuleKey} onChange={setContent} problems={problems} />}
+            <main key={`${mode}:${moduleKey}`} className={cx(s.canvas, mode !== "build" && s.canvasFlush)}>
+              <ModuleEditor content={content} selected={moduleKey} mode={mode === "build" ? "build" : "preview"} onChange={setContent} onSelect={setModuleKey} problems={problems} />
+            </main>
+            {mode === "build" && <ProblemsPanel problems={problems} onJump={jump} />}
+          </div>
+        )}
+
+        {view === "quest" && !quest && <div className={s.empty}>Quest ini tidak ada. Pilih quest lain di atas.</div>}
+        {view === "quest" && quest && (
         <div className={s.workspace}>
           {mode === "build" && (
             <QuestionList
@@ -402,9 +506,18 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
               onJump={jump}
               onDiscard={() => setDialog("discard")}
               canDiscard={hasDraft}
+              neverPublished={neverPublished}
+              onManageQuests={() => {
+                setCaseSection("quests");
+                openView("kasus");
+              }}
+              onExportQuest={() =>
+                downloadJson("quest", quest, [content.key, "quest", quest.order], { caseKey: content.key, quest: quest.order }, libraryNodesFor(content, questNodeKeys(quest)))
+              }
             />
           )}
         </div>
+        )}
 
         {dialog === "publish" && (
           <div className={s.overlay} role="dialog" aria-modal="true">
@@ -418,11 +531,17 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
                 <label className={s.plbl}>Catatan perubahan (opsional)</label>
                 <input className={s.pin} value={note} onChange={(e) => setNote(e.target.value)} placeholder="mis. Tambah soal matching di Quest 3" maxLength={500} />
               </div>
+              {initial.lockedSessions > 0 && (
+                <div className={s.hint}>
+                  🔒 {initial.lockedSessions} session terkunci di versinya (sedang aktif atau sudah ada progres peserta) dan tidak ikut pindah.
+                </div>
+              )}
               {initial.idleSessions > 0 && (
                 <label className={s.check}>
                   <input type="checkbox" checked={moveIdle} onChange={(e) => setMoveIdle(e.target.checked)} />
                   <span>
-                    Pindahkan juga {initial.idleSessions} session yang belum ada progres peserta ke versi ini.
+                    Pindahkan juga {initial.idleSessions} session yang belum dimulai (tidak aktif, belum ada progres) ke versi ini. Daftar quest-nya ikut
+                    diperbarui.
                   </span>
                 </label>
               )}
@@ -440,14 +559,18 @@ export function QuestBuilder({ initial, initialQuest, uploadEnabled }: { initial
         {dialog === "discard" && (
           <div className={s.overlay} role="dialog" aria-modal="true">
             <div className={s.dialog}>
-              <div className={s.dialogTitle}>Buang draf?</div>
-              <div className={s.dialogText}>Semua perubahan yang belum dipublish akan hilang, dan builder kembali ke versi {initial.publishedVersion ?? "terakhir"} yang sudah terbit.</div>
+              <div className={s.dialogTitle}>{neverPublished ? "Hapus kasus ini?" : "Buang draf?"}</div>
+              <div className={s.dialogText}>
+                {neverPublished
+                  ? "Kasus ini belum pernah terbit, jadi drafnya adalah satu-satunya isinya. Kasus akan dihapus dari daftar konten."
+                  : `Semua perubahan yang belum dipublish akan hilang, dan builder kembali ke versi ${initial.publishedVersion} yang sudah terbit.`}
+              </div>
               <div className={s.dialogActs}>
                 <button type="button" className={cx(s.btn, s.btnGhost)} onClick={() => setDialog(null)} disabled={busy !== null}>
                   Batal
                 </button>
                 <button type="button" className={cx(s.btn, s.btnDanger)} onClick={() => void discard()} disabled={busy !== null}>
-                  {busy === "discard" ? "Membuang…" : "Buang draf"}
+                  {busy === "discard" ? "Membuang…" : neverPublished ? "Hapus kasus" : "Buang draf"}
                 </button>
               </div>
             </div>

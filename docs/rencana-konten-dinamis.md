@@ -232,5 +232,57 @@ Sub-langkah:
   - Uji: `builder.test.ts`, `rubricSuggest.test.ts` (total 112 test). Builder diperiksa di
     browser lewat halaman sementara tanpa login (sudah dihapus): semua editor, usulan rubrik,
     uji, Preview, Play quiz → flow → hasil, dan penolakan simpan tanpa login.
-- [ ] Fase 4
+- [x] Fase 4 (kode selesai; tidak ada perubahan skema DB)
+  - 4a. Editor kasus: builder punya tiga tampilan, **Kasus**, **Quest**, dan **Modul**
+    (`/builder/[caseKey]?view=kasus|quest|modul`).
+    - Kasus (`CaseEditor.tsx`): cerita, persona, tujuan pengguna, dan brief.
+    - Kamus node: ikon, label, jenis, dan kunci. Mengganti kunci ikut mengganti semua tempat yang
+      memakainya (`renameNodeKey`: palet, kunci jawaban, rubrik, fixer, diagram). Node yang masih
+      dipakai tidak bisa dihapus (`nodeKeyUsage`).
+    - Daftar quest: tambah, urutkan, duplikat, hapus. Urutan selalu 1..n (`renumberQuests`).
+    - Masalah publish bisa diklik ke kasus, quest, soal, atau modul (`DraftProblem.module/section`).
+  - 4b. Editor modul (`ModuleEditor.tsx`, `WidgetEditors.tsx`, `FixerEditor.tsx`):
+    - modul bisa ditambah, diurutkan, diduplikat, dihapus, dan diganti kuncinya;
+    - tahap Coba/Penjelasan/Latihan berisi widget, dan setiap tipe widget punya formulir sendiri
+      ditambah mode JSON;
+    - editor fixer: pilih node, sambungan (menyala di awal / dipakai contoh jawaban), dan aturan
+      yang dicek langsung terhadap flow awal dan contoh jawaban;
+    - penutup halaman diedit di sini; Preview memakai `PracticeWorkbook` asli.
+    Validasi widget ditambah: pertanyaan kosong, dan aturan fixer yang memakai node di luar kanvas.
+  - 4c. Draf/publish, duplikasi, dan penguncian versi (`caseAdmin.ts`, `versionLock.ts`):
+    - kasus baru (kosong atau salinan) langsung jadi draf; kasus yang belum pernah terbit bisa
+      dihapus dengan membuang drafnya;
+    - session **terkunci** di versinya selama ACTIVE atau setelah ada progres peserta. Publish hanya
+      memindah session yang tidak terkunci, dicek ulang di dalam transaksi;
+    - session yang tidak terkunci bisa diperbarui ke versi terbaru dari `/admin/konten` atau
+      riwayat session (`/api/admin/sessions/[id]/version`);
+    - `repinSession` menyamakan `SessionQuest` dengan quest di versi baru (timer per session
+      tetap), juga untuk `import-case.ts --move-sessions`;
+    - perbaikan dari Fase 3: dialog publish sekarang menghitung session di versi terbaru juga,
+      karena publish membuat semuanya tertinggal.
+  - 4d. Editor rencana peserta `/builder/rencana/[sessionParticipantId]` (`PlanEditor.tsx`,
+    `planAdmin.ts`) menggantikan impor JSON (skrip lama tetap ada untuk impor massal):
+    - sapaan, kekuatan, pilihan dan urutan modul, dan latihan utama;
+    - simpan dijaga revisi (409), dicek dengan `findPlanProblems`, dan progres peserta tetap;
+    - **"Buat dari jawaban Quest X"** (`fixerFromFlow.ts`): flow yang dikirim peserta menjadi
+      kondisi awal fixer. Aturan diusulkan dari node flow itu (hasil akhir dicapai dan tidak
+      berlanjut, keputusan punya Ya/Tidak, error sebagai cabang, dilewati sebelum hasil akhir,
+      jalan kembali, tidak ada panah keluar dari hasil akhir). Aturan yang belum terpenuhi
+      dicentang dan menjadi langkah latihan, ditambah daftar check rubrik quest yang gagal. Kalau
+      soal punya kunci jawaban, kuncinya jadi contoh jawaban; kalau belum, mentor mencentangnya
+      di editor fixer.
+  - 4e. Ekspor/impor JSON (`transfer.ts`): kasus (dari `/admin/konten` per versi atau draf, dan
+    dari builder), quest, modul, dan rencana. File dibungkus amplop `{format, kind, data}` supaya
+    salah jenis ditolak dengan jelas. Quest dan modul membawa node yang dipakainya, dan saat
+    diimpor ke kasus lain builder menawarkan menambahkannya ke kamus (`mergeLibraryNodes`, tidak
+    pernah menimpa kunci/label yang sudah ada). Impor kasus di `/admin/konten` menjadi draf.
+  - Uji: `caseEdit.test.ts` dan `fixerFromFlow.test.ts` (total 147 test). Diperiksa di browser
+    dengan Postgres lokal:
+    - semua tampilan builder dan editor fixer;
+    - kasus baru → isi → publish v1 → session baru → v2 dengan quest tambahan → "Perbarui ke v2"
+      (session ikut punya 2 quest);
+    - session dengan progres tampil terkunci;
+    - duplikat lalu hapus kasus;
+    - impor quest/modul (termasuk file salah jenis);
+    - rencana: generator dari flow Quest 5, lengkapi contoh jawaban, simpan, muat ulang, preview.
 - [ ] Fase 5

@@ -67,7 +67,11 @@ Built with Next.js (App Router), Prisma 7, and Supabase Postgres.
 - `prisma/cases/*.json` — the content: one file per case (see *Cases* below)
 - `src/lib/content/` — the case schema and its checks (`case.ts`, `questions.ts`), the flow rubric
   engine (`rubric.ts`), the answer-key-free question model the browser gets (`publicQuestion.ts`),
-  and the markdown subset authored text is written in (`markdown.ts`)
+  and the markdown subset authored text is written in (`markdown.ts`); for the builder, drafts and
+  publishing (`drafts.ts`), whole-case edits (`caseEdit.ts`), JSON export/import (`transfer.ts`) and
+  version locks (`versionLock.ts`)
+- `src/app/builder/…` + `src/components/builder/` — the content builder (case, quest and module
+  views) and the participant plan editor
 - `src/app/(participant)/…` — participant pages: `/brief`, `/quest/[order]` (any quest of the
   session's case), `/result/[order]`, `/latihan`
 - `src/components/quiz/` — the quiz player and the inputs for the twelve question types
@@ -89,8 +93,9 @@ After seeding, log in at `/login` with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD
 2. **Pengaturan Session** — activate the session and set the time window / per-quest timers
    (they start from the case's own limits; leave one empty for a quest without a timer). You can
    also start a new batch here — pick its case — without touching any prior session's data.
-3. **Modul Latihan** — review each participant's follow-up learning path and progress (see below).
-4. **Konten** — open a quest in the question builder (see below).
+3. **Modul Latihan** — review each participant's follow-up learning path and progress, and write
+   their personal plan (see below).
+4. **Konten** — start, copy, import or export a case, and edit it in the builder (see below).
 
 ## Cases
 
@@ -125,12 +130,30 @@ smaller second case that exists to show a case plays from its file alone.
   it is safe to re-run — run it once more after deploying, to pick up what the old deployment
   recorded in the meantime.
 
-## Question builder
+## Content builder
 
-`/admin/konten` lists every case and its quests; each opens the full-screen builder at
-`/builder/<case>?quest=<n>`, laid out like the Formulir prototype: the question list (add by type,
-drag to reorder, duplicate, delete), the editor, and a panel for the question, the quest (title,
-intro, XP, timer, check mode) and the list of what still needs fixing.
+`/admin/konten` lists every case with its quests, the versions sessions use, and actions to start a
+case (blank, or as a copy of another), import a case file, and export any version as JSON. A new or
+imported case is only a draft until it's published. Each case opens in the full-screen builder at
+`/builder/<case>?view=kasus|quest|modul`, which has three views over the same draft:
+
+- **Kasus** — the story participants read (description, persona, user goal, the `/brief` text), the
+  node library (icon, label, type and key; renaming a key renames it everywhere the case uses it,
+  and a node still in use can't be deleted), and the quest list: add, reorder, duplicate, delete,
+  and export or import a quest as JSON. The case itself can be exported or replaced from a file.
+- **Quest** — one quest at a time, laid out like the Formulir prototype: the question list (add by
+  type, drag to reorder, duplicate, delete), the editor, and a panel for the question, the quest
+  (title, intro, XP, timer, check mode) and the list of what still needs fixing.
+- **Modul** — the Modul Latihan modules (add, reorder, duplicate, delete, export/import), each with
+  its key, title, duration, colour and tagline and its *Coba dulu*, *Penjelasan* and *Latihan*
+  widgets. Every widget type has its own form (plus raw JSON), and the flow fixer's editor checks
+  each rule live against the starting flow and the example solution. The page's closing checklist
+  is edited here too. **Preview** shows a module exactly as participants get it.
+
+An exported quest or module carries the library nodes it uses, so importing it into another case
+offers to add the ones that case doesn't have.
+
+In the Quest view:
 
 - **Build** edits all thirteen question types, answer keys and feedback included. A flow question
   has its palette, an answer key drawn on the participant's own canvas, a rubric proposed from that
@@ -144,6 +167,11 @@ intro, XP, timer, check mode) and the list of what still needs fixing.
   which new sessions get; it can also move sessions nobody has started yet. Everything else keeps
   its version.
 
+A session is **locked** to its version while it's `ACTIVE` and for good once a participant has any
+progress in it (`src/lib/content/versionLock.ts`). Any other session can be moved onto the latest
+version, from the publish dialog or with *Perbarui* on `/admin/konten` or the session history;
+moving it also brings its quest list in line with the new version.
+
 ## Modul Latihan Flow
 
 The follow-up to the quests, opened from `/brief` once a participant has finished them all (it
@@ -155,17 +183,22 @@ their own quest answers). Participants without a plan get every module of the ca
 
 - Plans, progress and written answers live in the `PracticePlan` table, one row per
   `SessionParticipant`.
-- Plans are imported from a JSON file. Copy `prisma/practice-plans/example.json`, then check it
-  (against the case of each participant's session) and save it:
+- Plans are written in the plan editor, `/builder/rencana/<sessionParticipantId>` (*Buat/Edit
+  rencana* on `/admin/latihan`): the greeting and strengths, which modules in which order, and the
+  latihan utama. **Buat dari jawaban Quest X** turns the flow the participant submitted into a
+  fixer: their arrows are its starting state, rules are proposed from the flow's nodes and the ones
+  their flow doesn't meet yet are pre-selected (and become the steps), alongside the rubric checks
+  they missed. With an answer key on the question, its arrows become the example solution;
+  otherwise the mentor ticks it in the fixer editor, which checks it as they go. Saving runs the
+  same checks as before (every fixer's example solution must satisfy its rules) and keeps the
+  participant's progress and answers. Plans can be exported and imported as JSON there too.
+- The batch importer still works for many plans at once. Copy `prisma/practice-plans/example.json`,
+  then check it (against the case of each participant's session) and save it:
 
   ```bash
   npx tsx --env-file=.env prisma/seed-practice-plans.ts prisma/practice-plans/<batch>.json --dry-run
   npx tsx --env-file=.env prisma/seed-practice-plans.ts prisma/practice-plans/<batch>.json
   ```
-
-  Nothing is written unless every plan validates, including a check that each fixer's example
-  solution actually satisfies its own rules. Re-importing replaces the plan but keeps the
-  participant's progress and answers.
 - Plan files contain personal notes about real participants, so everything in
   `prisma/practice-plans/` except `example.json` is git-ignored.
 - `/admin/latihan` lists every participant's path and progress. From there you can open their page

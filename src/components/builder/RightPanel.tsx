@@ -112,7 +112,39 @@ function tidyFeedback(f: { correct?: string; incorrect?: string }) {
   return f.correct || f.incorrect ? f : undefined;
 }
 
-function QuestTab({ quest, onChange, onDiscard, canDiscard }: { quest: QuestContent; onChange: (q: QuestContent) => void; onDiscard: () => void; canDiscard: boolean }) {
+/** The right-hand panel of the case and module views: just the problem list. */
+export function ProblemsPanel({ problems, onJump }: { problems: DraftProblem[]; onJump: (p: DraftProblem) => void }) {
+  return (
+    <aside className={s.rpanel}>
+      <div className={s.ptabs}>
+        <span className={cx(s.ptab, s.ptabActive)}>
+          Cek{problems.length > 0 && <span className={s.ptabCount}>{problems.length}</span>}
+        </span>
+      </div>
+      <div className={s.pbody}>
+        <ProblemsTab problems={problems} onJump={onJump} />
+      </div>
+    </aside>
+  );
+}
+
+function QuestTab({
+  quest,
+  onChange,
+  onDiscard,
+  canDiscard,
+  neverPublished,
+  onManageQuests,
+  onExport,
+}: {
+  quest: QuestContent;
+  onChange: (q: QuestContent) => void;
+  onDiscard: () => void;
+  canDiscard: boolean;
+  neverPublished: boolean;
+  onManageQuests: () => void;
+  onExport: () => void;
+}) {
   return (
     <>
       <div className={s.psec}>
@@ -170,11 +202,22 @@ function QuestTab({ quest, onChange, onDiscard, canDiscard }: { quest: QuestCont
           ))}
         </div>
       </div>
+      <div className={s.psec}>
+        <div className={s.psecT}>Quest</div>
+        <div className={s.qtActs}>
+          <button type="button" className={cx(s.btn, s.btnGhost)} onClick={onExport}>
+            ⬇ Ekspor quest ini (JSON)
+          </button>
+          <button type="button" className={cx(s.btn, s.btnGhost)} onClick={onManageQuests}>
+            ☰ Tambah, urutkan, duplikat, impor…
+          </button>
+        </div>
+      </div>
       {canDiscard && (
         <div className={s.psec} style={{ borderBottom: "none" }}>
           <div className={s.psecT}>Draf</div>
           <button type="button" className={cx(s.btn, s.btnDanger)} style={{ width: "100%", justifyContent: "center" }} onClick={onDiscard}>
-            Buang draf, kembali ke versi terbit
+            {neverPublished ? "Hapus kasus (belum pernah terbit)" : "Buang draf, kembali ke versi terbit"}
           </button>
         </div>
       )}
@@ -182,13 +225,15 @@ function QuestTab({ quest, onChange, onDiscard, canDiscard }: { quest: QuestCont
   );
 }
 
+const SECTION_LABELS = { info: "Kasus", nodes: "Kamus node", quests: "Daftar quest", closing: "Penutup latihan" } as const;
+
 function ProblemsTab({ problems, onJump }: { problems: DraftProblem[]; onJump: (p: DraftProblem) => void }) {
   if (!problems.length) return <div className={s.pempty}>✓ Tidak ada masalah. Kasus ini siap dipublish.</div>;
   return (
     <div className={s.problemList}>
       {problems.map((p, i) => {
-        const where = p.quest ? `Quest ${p.quest}${p.question ? ` · ${p.question}` : ""}` : "Kasus";
-        const text = p.message.replace(/^quest \d+(, soal "[^"]+"| , soal \d+|, soal \d+)?: /, "");
+        const where = p.quest ? `Quest ${p.quest}${p.question ? ` · ${p.question}` : ""}` : p.module ? `Modul ${p.module}` : SECTION_LABELS[p.section ?? "info"];
+        const text = p.message.replace(/^quest \d+(, soal "[^"]+"| , soal \d+|, soal \d+)?: /, "").replace(/^modul [^,:]+(, (coba|penjelasan|latihan) \d+)?: /, (_m, loc?: string) => (loc ? `${loc.slice(2)}: ` : ""));
         return (
           <button key={i} type="button" className={s.problem} onClick={() => onJump(p)}>
             <span className={s.problemWhere}>{where}</span>
@@ -213,6 +258,9 @@ export function RightPanel({
   onJump,
   onDiscard,
   canDiscard,
+  neverPublished,
+  onManageQuests,
+  onExportQuest,
 }: {
   tab: PanelTab;
   onTab: (t: PanelTab) => void;
@@ -226,6 +274,9 @@ export function RightPanel({
   onJump: (p: DraftProblem) => void;
   onDiscard: () => void;
   canDiscard: boolean;
+  neverPublished: boolean;
+  onManageQuests: () => void;
+  onExportQuest: () => void;
 }) {
   return (
     <aside className={s.rpanel}>
@@ -257,7 +308,17 @@ export function RightPanel({
           ) : (
             <div className={s.pempty}>Pilih atau tambah soal dulu.</div>
           ))}
-        {tab === "quest" && <QuestTab quest={quest} onChange={onQuestChange} onDiscard={onDiscard} canDiscard={canDiscard} />}
+        {tab === "quest" && (
+          <QuestTab
+            quest={quest}
+            onChange={onQuestChange}
+            onDiscard={onDiscard}
+            canDiscard={canDiscard}
+            neverPublished={neverPublished}
+            onManageQuests={onManageQuests}
+            onExport={onExportQuest}
+          />
+        )}
         {tab === "masalah" && <ProblemsTab problems={problems} onJump={onJump} />}
       </div>
     </aside>

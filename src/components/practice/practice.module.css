@@ -43,6 +43,10 @@
   font-size: 17px;
   line-height: 1.6;
 }
+/* Inside the builder's preview pane there's no top bar above the page. */
+.root.embedded {
+  --topbar-h: 0px;
+}
 .root h1,
 .root h2,
 .root h3 {
