@@ -19,11 +19,13 @@ export async function PUT(request: Request, { params }: Params) {
   return NextResponse.json(result.value);
 }
 
-/** Throws the draft away. */
-export async function DELETE(_request: Request, { params }: Params) {
+/** Throws the draft away (?rev= the revision the editor started from); for a never-published case, deletes the case. */
+export async function DELETE(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user || user.appRole !== "ADMIN") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const result = await discardDraft((await params).caseKey);
+  const rev = new URL(request.url).searchParams.get("rev");
+  if (!rev) return NextResponse.json({ error: "Revisi draf wajib dikirim" }, { status: 400 });
+  const result = await discardDraft((await params).caseKey, rev);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json(result.value);
 }

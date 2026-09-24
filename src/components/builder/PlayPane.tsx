@@ -194,6 +194,7 @@ export function QuestPlay({ quest, nodes }: { quest: QuestContent; nodes: CaseNo
           questLabel={label}
           intro={quest.intro}
           checkMode={quest.checkMode}
+          rewards={quest.rewards}
           questions={quiz.map((q) => ({ question: toPublicQuestion(q, SEED), answer: null, reveal: null }))}
           remainingSeconds={quest.timeLimitMinutes ? quest.timeLimitMinutes * 60 : null}
           hasFlowAfter={Boolean(flow)}

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { caseContentSchema } from "@/lib/content/case";
+import { LOCK_INCLUDE, lockOf } from "@/lib/content/versionLock";
 
 /**
  * The workshop Session the admin pages manage: the most recently created one
@@ -15,13 +16,23 @@ export async function getManagedSession() {
   });
 }
 
-/** Every session that runs a case, newest first — for the admin's session history list. */
+/** Every session that runs a case, newest first — for the admin's session history list, with each one's version lock. */
 export async function listAllSessions() {
-  const sessions = await prisma.session.findMany({
-    where: { scenarioVersionId: { not: null } },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { SessionParticipant: true } }, ScenarioVersion: { include: { Scenario: true } } },
-  });
+  const [sessions, latest] = await Promise.all([
+    prisma.session.findMany({
+      where: { scenarioVersionId: { not: null } },
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: { select: { SessionParticipant: true } },
+        ScenarioVersion: { include: { Scenario: true } },
+      },
+    }),
+    prisma.scenarioVersion.groupBy({ by: ["scenarioId"], where: { status: "PUBLISHED" }, _max: { version: true } }),
+  ]);
+  const locks = new Map(
+    (await prisma.session.findMany({ where: { id: { in: sessions.map((s) => s.id) } }, select: { id: true, status: true, ...LOCK_INCLUDE } })).map((s) => [s.id, lockOf(s)])
+  );
+  const latestByScenario = new Map(latest.map((l) => [l.scenarioId, l._max.version]));
   return sessions.map((s) => ({
     id: s.id,
     title: s.title,
@@ -31,6 +42,8 @@ export async function listAllSessions() {
     participantCount: s._count.SessionParticipant,
     caseTitle: s.ScenarioVersion?.Scenario.title ?? "—",
     caseVersion: s.ScenarioVersion?.version ?? null,
+    latestVersion: s.ScenarioVersion ? (latestByScenario.get(s.ScenarioVersion.scenarioId) ?? null) : null,
+    lock: locks.get(s.id) ?? null,
   }));
 }
 

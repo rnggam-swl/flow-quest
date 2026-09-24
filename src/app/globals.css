@@ -59,3 +59,26 @@ h1, h2, h3, .font-display {
   background-image: var(--dotgrid);
   background-size: 22px 22px;
 }
+
+/* Quiz reaction after a checked answer (Fase 5 gamification). */
+@keyframes reaction-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.reaction-pop {
+  animation: reaction-pop 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction-pop {
+    animation: none;
+  }
+}

@@ -183,6 +183,7 @@
       "xp": 50,
       "timeLimitMinutes": 15,
       "checkMode": "instant",
+      "rewards": { "questionXp": 10, "comboBonus": 5, "reactions": true },
       "questions": [
         {
           "type": "matching",

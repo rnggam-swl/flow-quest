@@ -43,6 +43,10 @@ export default async function AdminParticipantPracticePage({
         <p className="mb-4 text-[13.5px] text-muted">
           {plan.personal ? "Rencana personal" : "Belum ada rencana personal (semua modul)"} ·{" "}
           {parts.filter((p) => completed.includes(p)).length} dari {parts.length} bagian selesai ·{" "}
+          <Link href={`/builder/rencana/${enrollment.id}`} className="font-semibold text-teal underline">
+            {plan.personal ? "Edit rencana" : "Buat rencana"} →
+          </Link>{" "}
+          ·{" "}
           <Link href={`/admin/participant/${enrollment.id}`} className="text-teal underline">
             Laporan quest →
           </Link>

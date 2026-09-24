@@ -80,6 +80,32 @@ export async function writePublishedVersion(
   return { created, previous: latest, staleQuests: stale.map((q) => ({ order: q.order, title: q.title })) };
 }
 
+/**
+ * Points a session at another version of its case and brings its SessionQuest
+ * rows in line with that version's quests: quests the version no longer has
+ * are dropped from the session, new ones are added, and the rest keep their
+ * per-session timer. Quest rows are per (case, order), so an order that exists
+ * in both versions keeps its row. Callers decide whether the session may move
+ * (see versionLock.ts); participant data is never touched here.
+ */
+export async function repinSession(tx: Tx, sessionId: string, version: { id: string; scenarioId: string; content: CaseContent }) {
+  const orders = version.content.quests.map((q) => q.order);
+  const questRows = await tx.quest.findMany({ where: { scenarioId: version.scenarioId, order: { in: orders } } });
+  const questIdByOrder = new Map(questRows.map((q) => [q.order, q.id]));
+  const missing = orders.filter((o) => !questIdByOrder.has(o));
+  if (missing.length) throw new Error(`Quest rows missing for order(s) ${missing.join(", ")}`);
+
+  const existing = await tx.sessionQuest.findMany({ where: { sessionId } });
+  const stale = existing.filter((sq) => questIdByOrder.get(sq.order) !== sq.questId);
+  if (stale.length) await tx.sessionQuest.deleteMany({ where: { id: { in: stale.map((sq) => sq.id) } } });
+  const kept = new Set(existing.filter((sq) => !stale.includes(sq)).map((sq) => sq.order));
+  const toCreate = orders.filter((o) => !kept.has(o));
+  if (toCreate.length) {
+    await tx.sessionQuest.createMany({ data: toCreate.map((order) => ({ id: crypto.randomUUID(), sessionId, questId: questIdByOrder.get(order)!, order })) });
+  }
+  await tx.session.update({ where: { id: sessionId }, data: { scenarioVersionId: version.id } });
+}
+
 export async function importCase(
   prisma: PrismaClient,
   content: CaseContent,
@@ -107,7 +133,9 @@ export async function importCase(
 
     let movedSessions = 0;
     if (options.moveSessions && previous) {
-      movedSessions = (await tx.session.updateMany({ where: { scenarioVersionId: previous.id }, data: { scenarioVersionId: created.id } })).count;
+      const sessions = await tx.session.findMany({ where: { scenarioVersionId: previous.id }, select: { id: true } });
+      for (const s of sessions) await repinSession(tx, s.id, { id: created.id, scenarioId, content });
+      movedSessions = sessions.length;
     }
     return { status: "created" as const, scenarioId, version: created.version, movedSessions, staleQuests };
   });

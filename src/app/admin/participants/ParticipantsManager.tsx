@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { randomPassword } from "@/lib/randomPassword";
 import { useRouter } from "next/navigation";
 import { Button, Card, Field, Input, Textarea, StatusPill } from "@/components/ui";
 
@@ -20,17 +21,11 @@ interface ProvisionedResult {
   status: string;
 }
 
-function randomPassword() {
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  let out = "";
-  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
-export function ParticipantsManager({ existing }: { existing: ExistingParticipant[] }) {
+/** `initialPassword` comes from the server so the first render matches on both sides (no hydration mismatch). */
+export function ParticipantsManager({ existing, initialPassword }: { existing: ExistingParticipant[]; initialPassword: string }) {
   const router = useRouter();
   const [lines, setLines] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(initialPassword);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ProvisionedResult[] | null>(null);
@@ -41,10 +36,6 @@ export function ParticipantsManager({ existing }: { existing: ExistingParticipan
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPassword(randomPassword());
-  }, []);
 
   const lineCount = lines.split("\n").map((l) => l.trim()).filter(Boolean).length;
 

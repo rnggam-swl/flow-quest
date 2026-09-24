@@ -1,6 +1,7 @@
 import { RichText } from "@/components/RichText";
 import { describeAnswer, describeCorrectAnswer } from "@/lib/content/describe";
 import type { QuizQuestion } from "@/lib/content/questions";
+import type { QuestionReward } from "@/lib/content/rewards";
 
 export interface ReviewedQuestion {
   question: QuizQuestion;
@@ -10,7 +11,7 @@ export interface ReviewedQuestion {
 }
 
 /** Per-question review of a quest's quiz answers, after it's submitted. */
-export function QuizReview({ items, showSummary }: { items: ReviewedQuestion[]; showSummary: boolean }) {
+export function QuizReview({ items, showSummary, rewards }: { items: ReviewedQuestion[]; showSummary: boolean; rewards?: Map<string, QuestionReward> }) {
   const correct = items.reduce((n, r) => n + r.correct, 0);
   const total = items.reduce((n, r) => n + r.total, 0);
   const pct = total ? Math.round((correct / total) * 100) : 0;
@@ -54,8 +55,13 @@ export function QuizReview({ items, showSummary }: { items: ReviewedQuestion[]; 
                   )}
                   {feedback && <RichText source={feedback} className="mt-2 text-[13px] leading-[1.6] text-muted" paragraphClassName="mb-1 last:mb-0" />}
                 </div>
-                <span className="flex-shrink-0 text-[12.5px] font-semibold tabular-nums text-muted2">
+                <span className="flex flex-shrink-0 flex-col items-end text-[12.5px] font-semibold tabular-nums text-muted2">
                   {c}/{t}
+                  {rewards?.get(question.id) && (rewards.get(question.id)!.xp > 0 || rewards.get(question.id)!.combo > 0) && (
+                    <span className="text-[11.5px] text-gold">
+                      +{rewards.get(question.id)!.xp + rewards.get(question.id)!.combo} XP{rewards.get(question.id)!.combo > 0 ? " 🔥" : ""}
+                    </span>
+                  )}
                 </span>
               </div>
             </div>

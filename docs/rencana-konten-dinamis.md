@@ -232,5 +232,89 @@ Sub-langkah:
   - Uji: `builder.test.ts`, `rubricSuggest.test.ts` (total 112 test). Builder diperiksa di
     browser lewat halaman sementara tanpa login (sudah dihapus): semua editor, usulan rubrik,
     uji, Preview, Play quiz → flow → hasil, dan penolakan simpan tanpa login.
-- [ ] Fase 4
-- [ ] Fase 5
+- [x] Fase 4 (kode selesai; tidak ada perubahan skema DB)
+  - 4a. Editor kasus: builder punya tiga tampilan, **Kasus**, **Quest**, dan **Modul**
+    (`/builder/[caseKey]?view=kasus|quest|modul`).
+    - Kasus (`CaseEditor.tsx`): cerita, persona, tujuan pengguna, dan brief.
+    - Kamus node: ikon, label, jenis, dan kunci. Mengganti kunci ikut mengganti semua tempat yang
+      memakainya (`renameNodeKey`: palet, kunci jawaban, rubrik, fixer, diagram). Node yang masih
+      dipakai tidak bisa dihapus (`nodeKeyUsage`).
+    - Daftar quest: tambah, urutkan, duplikat, hapus. Urutan selalu 1..n (`renumberQuests`).
+    - Masalah publish bisa diklik ke kasus, quest, soal, atau modul (`DraftProblem.module/section`).
+  - 4b. Editor modul (`ModuleEditor.tsx`, `WidgetEditors.tsx`, `FixerEditor.tsx`):
+    - modul bisa ditambah, diurutkan, diduplikat, dihapus, dan diganti kuncinya;
+    - tahap Coba/Penjelasan/Latihan berisi widget, dan setiap tipe widget punya formulir sendiri
+      ditambah mode JSON;
+    - editor fixer: pilih node, sambungan (menyala di awal / dipakai contoh jawaban), dan aturan
+      yang dicek langsung terhadap flow awal dan contoh jawaban;
+    - penutup halaman diedit di sini; Preview memakai `PracticeWorkbook` asli.
+    Validasi widget ditambah: pertanyaan kosong, dan aturan fixer yang memakai node di luar kanvas.
+  - 4c. Draf/publish, duplikasi, dan penguncian versi (`caseAdmin.ts`, `versionLock.ts`):
+    - kasus baru (kosong atau salinan) langsung jadi draf; kasus yang belum pernah terbit bisa
+      dihapus dengan membuang drafnya;
+    - session **terkunci** di versinya selama ACTIVE atau setelah ada progres peserta. Publish hanya
+      memindah session yang tidak terkunci, dicek ulang di dalam transaksi;
+    - session yang tidak terkunci bisa diperbarui ke versi terbaru dari `/admin/konten` atau
+      riwayat session (`/api/admin/sessions/[id]/version`);
+    - `repinSession` menyamakan `SessionQuest` dengan quest di versi baru (timer per session
+      tetap), juga untuk `import-case.ts --move-sessions`;
+    - perbaikan dari Fase 3: dialog publish sekarang menghitung session di versi terbaru juga,
+      karena publish membuat semuanya tertinggal.
+  - 4d. Editor rencana peserta `/builder/rencana/[sessionParticipantId]` (`PlanEditor.tsx`,
+    `planAdmin.ts`) menggantikan impor JSON (skrip lama tetap ada untuk impor massal):
+    - sapaan, kekuatan, pilihan dan urutan modul, dan latihan utama;
+    - simpan dijaga revisi (409), dicek dengan `findPlanProblems`, dan progres peserta tetap;
+    - **"Buat dari jawaban Quest X"** (`fixerFromFlow.ts`): flow yang dikirim peserta menjadi
+      kondisi awal fixer. Aturan diusulkan dari node flow itu (hasil akhir dicapai dan tidak
+      berlanjut, keputusan punya Ya/Tidak, error sebagai cabang, dilewati sebelum hasil akhir,
+      jalan kembali, tidak ada panah keluar dari hasil akhir). Aturan yang belum terpenuhi
+      dicentang dan menjadi langkah latihan, ditambah daftar check rubrik quest yang gagal. Kalau
+      soal punya kunci jawaban, kuncinya jadi contoh jawaban; kalau belum, mentor mencentangnya
+      di editor fixer.
+  - 4e. Ekspor/impor JSON (`transfer.ts`): kasus (dari `/admin/konten` per versi atau draf, dan
+    dari builder), quest, modul, dan rencana. File dibungkus amplop `{format, kind, data}` supaya
+    salah jenis ditolak dengan jelas. Quest dan modul membawa node yang dipakainya, dan saat
+    diimpor ke kasus lain builder menawarkan menambahkannya ke kamus (`mergeLibraryNodes`, tidak
+    pernah menimpa kunci/label yang sudah ada). Impor kasus di `/admin/konten` menjadi draf.
+  - Uji: `caseEdit.test.ts` dan `fixerFromFlow.test.ts` (total 147 test). Diperiksa di browser
+    dengan Postgres lokal:
+    - semua tampilan builder dan editor fixer;
+    - kasus baru → isi → publish v1 → session baru → v2 dengan quest tambahan → "Perbarui ke v2"
+      (session ikut punya 2 quest);
+    - session dengan progres tampil terkunci;
+    - duplikat lalu hapus kasus;
+    - impor quest/modul (termasuk file salah jenis);
+    - rencana: generator dari flow Quest 5, lengkapi contoh jawaban, simpan, muat ulang, preview.
+- [x] Perbaikan bug sebelum Fase 5 (dari code review Fase 2–4 dan uji browser)
+  - Hasil quest yang habis waktu sebelum kanvas flow dikirim tidak lagi berputar ke `/brief`;
+    review quiz tetap tampil.
+  - `/api/quest2/submit` hanya menerima kanvas milik tim dan quest session saat ini yang masih draf.
+  - Penilaian server: hotspot hanya membaca tanda sebanyak jumlah titik, dan branching yang
+    berhenti sebelum ending menghitung pilihan yang tersisa sebagai salah.
+  - Impor dan simpan draf melewati `acceptDraftShape`: default skema diisi, dan isi tanpa field
+    yang dibaca editor ditolak. Draf lama yang rusak membuka halaman pemulihan.
+  - Buang draf/hapus kasus wajib membawa revisi, dan hapus kasus berjalan atomik.
+  - Editor: state JSON widget setelah dipindah, baris fixer kembar, kunci node dengan `_` di
+    Modul Latihan, dan quest terbuka yang dihapus.
+  - Lint bersih: kata sandi peserta dari satu generator CSPRNG, dibuat di server.
+- [x] Fase 5
+  - Gamifikasi (`src/lib/content/rewards.ts`): `rewards` opsional per quest berisi XP per soal
+    benar (sebagian benar dapat bagiannya), bonus combo untuk jawaban benar beruntun (sampai ×4),
+    dan reaksi setelah menjawab di mode cek langsung.
+    - XP dihitung di server saat quest selesai (`completeAttempt`) dengan fungsi yang sama yang
+      dipakai pemutar untuk menampilkan XP berjalan.
+    - Halaman hasil menampilkan rincian XP dan XP per soal; `/brief` menampilkan XP maksimal.
+    - Diatur di tab Quest builder. Quest 3 `ruang-belajar.json` jadi contohnya; Klub Fotografi
+      tidak berubah.
+  - Analitik per soal di `/admin/analitik` (`src/lib/content/analytics.ts`, `analyticsData.ts`),
+    per session:
+    - mulai/selesai/waktu habis/median waktu per quest;
+    - per soal quiz: rata-rata skor, benar penuh, sebaran pilihan (kunci ditandai), dan jawaban
+      belum tepat yang paling sering, dengan tanda ⚠ untuk soal sulit;
+    - per soal flow: sebaran tier dan tingkat lolos setiap check rubrik (dinilai ulang dengan
+      rubrik versi yang di-pin), tersulit di atas.
+  - Panduan: `/admin/konten/panduan` untuk pengguna builder (ditautkan dari Konten dan header
+    builder), dan `docs/panduan-konten.md` sebagai referensi format JSON.
+  - Uji: `rewards.test.ts`, `analytics.test.ts`, `draftShape.test.ts` (total 161 test). Di
+    browser: reaksi dan XP di Quest 3, XP server +165 cocok dengan hitungan, rincian di halaman
+    hasil, analitik session uji, dan halaman panduan.

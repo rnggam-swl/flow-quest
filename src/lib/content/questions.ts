@@ -286,8 +286,10 @@ export function replayBranching(q: z.infer<typeof branchingSchema>, choices: num
  * Scores one quiz answer. Rules per type:
  * - multiselect: right picks minus wrong picks (never below 0), out of the number of right options.
  * - matching: a pair counts when it's linked to its own item and nothing else.
- * - hotspot: each mark can find at most one spot; unmarked spots don't count.
- * - branching: right choices out of the choices actually made on the way to an ending.
+ * - hotspot: each mark can find at most one spot; unmarked spots don't count, and only as many marks
+ *   as there are spots are read (the player never allows more), so blanketing the image scores nothing extra.
+ * - branching: right choices out of the choices made on the way to an ending; a story left before
+ *   reaching one counts the choice still owed as wrong.
  */
 export function scoreQuestion(q: QuizQuestion, rawAnswer: unknown): QuestionScore {
   switch (q.type) {
@@ -347,7 +349,7 @@ export function scoreQuestion(q: QuizQuestion, rawAnswer: unknown): QuestionScor
     case "hotspot": {
       const a = answerSchemas.hotspot.parse(rawAnswer);
       const found = new Set<number>();
-      for (const m of a.marks) {
+      for (const m of a.marks.slice(0, q.spots.length)) {
         const hit = q.spots.findIndex((s, i) => !found.has(i) && Math.hypot(m.x - s.x, m.y - s.y) <= s.radius);
         if (hit !== -1) found.add(hit);
       }
@@ -355,8 +357,9 @@ export function scoreQuestion(q: QuizQuestion, rawAnswer: unknown): QuestionScor
     }
     case "branching": {
       const a = answerSchemas.branching.parse(rawAnswer);
-      const { made } = replayBranching(q, a.choices);
-      return { correct: made.filter((m) => m.correct).length, total: made.length };
+      const { node, made } = replayBranching(q, a.choices);
+      const unfinished = !node?.ending;
+      return { correct: made.filter((m) => m.correct).length, total: made.length + (unfinished ? 1 : 0) };
     }
   }
 }

@@ -61,6 +61,8 @@ export default async function AdminSessionPage() {
             participantCount: s.participantCount,
             caseTitle: s.caseTitle,
             caseVersion: s.caseVersion,
+            latestVersion: s.latestVersion,
+            lock: s.lock,
           }))}
           currentSessionId={session.id}
           cases={cases}

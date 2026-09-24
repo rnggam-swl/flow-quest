@@ -64,11 +64,7 @@ export default async function AdminPracticeHubPage() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
-          <Link
-            key={c.id}
-            href={`/admin/latihan/${c.id}`}
-            className="flex flex-col gap-2.5 rounded-xl border border-border bg-surface p-5 transition-colors hover:border-teal"
-          >
+          <div key={c.id} className="flex flex-col gap-2.5 rounded-xl border border-border bg-surface p-5 transition-colors hover:border-teal">
             <div className="flex items-start justify-between gap-2">
               <div className="font-display text-[18px] font-semibold leading-[1.3]">{c.name}</div>
               <StatusPill tone={c.unlocked ? "completed" : "progress"}>{c.unlocked ? "Terbuka" : "Quest belum selesai"}</StatusPill>
@@ -98,15 +94,27 @@ export default async function AdminPracticeHubPage() {
                 <div className="h-full rounded bg-teal" style={{ width: `${c.total ? (c.done / c.total) * 100 : 0}%` }} />
               </div>
             </div>
-          </Link>
+            <div className="flex gap-4 border-t border-border pt-2.5 text-[13px]">
+              <Link href={`/builder/rencana/${c.id}`} className="font-semibold text-teal hover:underline">
+                {c.personal ? "Edit rencana" : "Buat rencana"}
+              </Link>
+              <Link href={`/admin/latihan/${c.id}`} className="text-muted hover:text-text">
+                Pratinjau & jawaban →
+              </Link>
+            </div>
+          </div>
         ))}
         {cards.length === 0 && <p className="text-muted2">Belum ada peserta terdaftar.</p>}
       </div>
 
       <p className="mt-8 text-[12.5px] leading-[1.6] text-muted2">
-        Rencana personal diimpor dari file JSON (contoh: <code>prisma/practice-plans/example.json</code>) dengan{" "}
-        <code className="text-muted">npx tsx --env-file=.env prisma/seed-practice-plans.ts &lt;file.json&gt;</code>. Mengimpor
-        ulang hanya mengganti isi rencana; progres dan jawaban peserta tetap tersimpan.
+        Rencana personal dibuat di editor rencana: pilih modul, tulis sapaan dan kekuatan peserta, lalu buat latihan utama dari flow yang ia kirim di quest.
+        Menyimpan rencana hanya mengganti isinya; progres dan jawaban peserta tetap tersimpan. Rencana juga bisa diekspor dan diimpor sebagai JSON dari editor.
+        Modul sendiri diedit di{" "}
+        <Link href="/admin/konten" className="text-teal underline">
+          Konten
+        </Link>
+        .
       </p>
     </div>
   );

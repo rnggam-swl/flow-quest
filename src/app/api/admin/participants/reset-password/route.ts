@@ -2,15 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser, hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { randomPassword } from "@/lib/randomPassword";
 
 const bodySchema = z.object({ userId: z.string().uuid() });
-
-function randomPassword() {
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  let out = "";
-  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
 
 export async function POST(request: Request) {
   const admin = await getCurrentUser();

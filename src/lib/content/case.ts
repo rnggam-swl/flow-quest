@@ -4,6 +4,7 @@ import { findQuestionProblems, questionSchema, QUESTION_ID } from "@/lib/content
 import { EDGE_KINDS, evaluateCondition, practiceRuleCondition, type RubricGraph } from "@/lib/content/rubric";
 import { isKnownRule, EDGE_PATTERN } from "@/lib/practice/flowRules";
 import { planWidgetSchema, type FixerWidget, type PlanWidget } from "@/lib/practice/schema";
+import { questRewardsSchema } from "@/lib/content/rewards";
 
 /**
  * A case ("kasus") is the unit of content: the story, the node library every
@@ -36,6 +37,8 @@ export const questContentSchema = z.strictObject({
   /** "instant": each answer is checked (and its feedback shown) right away; "end": all at once after submitting. */
   checkMode: z.enum(["instant", "end"]).default("end"),
   questions: z.array(questionSchema).min(1),
+  /** Optional gamification: XP per right answer, combo bonus, reactions (see rewards.ts). */
+  rewards: questRewardsSchema.optional(),
 });
 export type QuestContent = z.infer<typeof questContentSchema>;
 
@@ -101,9 +104,14 @@ function findFixerProblems(w: FixerWidget, where: string, library: Map<string, C
   if (!w.nodes.includes(w.start)) p.push(`${where}: start "${w.start}" tidak ada di daftar node`);
   const unknownRules = w.rules.filter((r) => !isKnownRule(r));
   if (unknownRules.length) p.push(`${where}: aturan tidak dikenal: ${unknownRules.join(", ")}`);
+  const ruleNodes = w.rules.filter(isKnownRule).flatMap((r) => (r.startsWith("not:") ? [] : r.split(":").slice(1)));
+  const offCanvas = [...new Set(ruleNodes)].filter((k) => !w.nodes.includes(k));
+  if (offCanvas.length) p.push(`${where}: aturan memakai node yang tidak ada di daftar node latihan: ${offCanvas.join(", ")}`);
+  const twice = duplicates([...w.initial, ...(w.extra ?? [])]);
+  if (twice.length) p.push(`${where}: sambungan terduplikasi: ${twice.join(", ")}`);
   const unreachable = w.solution.filter((e) => !available.has(e));
   if (unreachable.length) p.push(`${where}: contoh jawaban memakai sambungan yang tidak bisa dinyalakan: ${unreachable.join(", ")}`);
-  if (unknown.length || unknownRules.length) return p;
+  if (unknown.length || unknownRules.length || offCanvas.length) return p;
 
   const graphOf = (on: string[]): RubricGraph => {
     const edges = on.map((s) => {
@@ -138,20 +146,33 @@ function findWidgetProblems(w: ModuleWidget | PlanWidget, where: string, library
       break;
     }
     case "mcq":
+      if (!w.q.trim()) p.push(`${where}: pertanyaan belum diisi`);
       if (!w.options.some((o) => o.ok)) p.push(`${where}: tidak ada opsi yang benar`);
+      if (w.options.some((o) => !o.t.trim())) p.push(`${where}: ada opsi yang masih kosong`);
+      break;
+    case "poll":
+    case "write":
+    case "spot":
+      if (!w.q.trim()) p.push(`${where}: pertanyaan belum diisi`);
+      break;
+    case "rule":
+      if (!w.text.trim()) p.push(`${where}: teks aturan belum diisi`);
       break;
     case "goalpick":
       w.scenarios.forEach((s, i) => {
+        if (!s.text.trim()) p.push(`${where}: skenario ${i + 1} belum diisi`);
         if (s.goal >= s.items.length) p.push(`${where}: skenario ${i + 1} menunjuk jawaban di luar daftar`);
       });
       break;
     case "decisions":
       w.items.forEach((it, i) => {
+        if (!it.q.trim()) p.push(`${where}: keputusan ${i + 1} belum punya pertanyaan`);
         if (![...it.ya, ...it.tidak].every((o) => it.options.includes(o))) p.push(`${where}: keputusan ${i + 1} punya jawaban yang tidak ada di pilihan`);
       });
       break;
     case "planner":
       w.rows.forEach((r, i) => {
+        if (!r.problem.trim()) p.push(`${where}: baris ${i + 1} belum punya masalah`);
         if (!r.check.every((o) => w.checkOptions.includes(o)) || !r.go.every((o) => w.goOptions.includes(o)))
           p.push(`${where}: baris ${i + 1} punya jawaban yang tidak ada di pilihan`);
       });
@@ -196,6 +217,7 @@ export function findCaseProblems(c: CaseContent): string[] {
     if (q.intro && looksLikeHtml(q.intro)) p.push(`${where}: intro memakai tag HTML; gunakan markdown`);
     for (const id of duplicates(q.questions.map((x) => x.id))) p.push(`${where}: id soal "${id}" terduplikasi`);
     if (q.questions.filter((x) => x.type === "flow").length > 1) p.push(`${where}: maksimal satu soal flow per quest`);
+    if (q.rewards && q.questions.every((x) => x.type === "flow")) p.push(`${where}: XP per soal dan combo hanya berlaku untuk soal quiz; quest ini hanya punya soal flow`);
     q.questions.forEach((x) => p.push(...findQuestionProblems(x, `${where}, soal "${x.id}"`, libraryKeys, nodeTypes)));
   }
 

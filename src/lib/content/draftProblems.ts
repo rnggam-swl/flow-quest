@@ -14,7 +14,14 @@ export interface DraftProblem {
   quest?: number;
   /** Question id within that quest. */
   question?: string;
+  /** Modul Latihan module key the problem is in, when it's in one. */
+  module?: string;
+  /** For case-level problems: which part of the case editor fixes it. */
+  section?: CaseSection;
 }
+
+/** The parts of the builder's case view, and the module view's closing page. */
+export type CaseSection = "info" | "nodes" | "quests" | "closing";
 
 const FIELD_LABELS: Record<string, string> = {
   prompt: "pertanyaan",
@@ -49,6 +56,17 @@ const FIELD_LABELS: Record<string, string> = {
   odd: "item yang beda",
   questions: "soal",
   feedback: "feedback",
+  description: "cerita kasus",
+  key: "kunci",
+  icon: "ikon",
+  nodeType: "jenis node",
+  tagline: "tagline",
+  time: "durasi",
+  color: "warna",
+  checklist: "checklist",
+  coba: "Coba dulu",
+  penjelasan: "Penjelasan",
+  latihan: "Latihan",
 };
 
 function describeField(path: PropertyKey[]): string {
@@ -79,6 +97,14 @@ function describeIssue(issue: z.core.$ZodIssue): string {
 }
 
 const WHERE = /^quest (\d+)(?:, soal "([^"]+)")?: /;
+const MODULE_WHERE = /^(?:kunci )?modul "?([^",:]+)"?[,: ]/;
+
+function sectionOfPath(first: PropertyKey | undefined): CaseSection {
+  if (first === "nodes") return "nodes";
+  if (first === "quests") return "quests";
+  if (first === "practiceClosing") return "closing";
+  return "info";
+}
 
 export function findDraftProblems(raw: unknown): { problems: DraftProblem[]; content: CaseContent | null } {
   const parsed = caseContentSchema.safeParse(raw);
@@ -97,14 +123,25 @@ export function findDraftProblems(raw: unknown): { problems: DraftProblem[]; con
         const field = describeField(path.slice(2));
         return { quest: order, message: `quest ${order}: ${field ? `${field} ` : ""}${describeIssue(issue)}` };
       }
+      if (path[0] === "modules" && typeof path[1] === "number") {
+        const key = (raw as { modules?: { key?: string }[] } | null)?.modules?.[path[1]]?.key;
+        const field = describeField(path.slice(2));
+        return { module: key, message: `modul ${key ?? path[1] + 1}: ${field ? `${field} ` : ""}${describeIssue(issue)}` };
+      }
       const field = describeField(path);
-      return { message: `${field ? `${field} ` : ""}${describeIssue(issue)}` };
+      return { section: sectionOfPath(path[0]), message: `${field ? `${field} ` : ""}${describeIssue(issue)}` };
     });
     return { problems, content: null };
   }
   const problems = findCaseProblems(parsed.data).map((message): DraftProblem => {
     const m = WHERE.exec(message);
-    return m ? { message, quest: Number(m[1]), question: m[2] } : { message };
+    if (m) return { message, quest: Number(m[1]), question: m[2] };
+    const mod = MODULE_WHERE.exec(message);
+    if (mod) return { message, module: mod[1] };
+    if (/node/.test(message) && !/modul/.test(message)) return { message, section: "nodes" };
+    if (/urutan quest/.test(message)) return { message, section: "quests" };
+    if (/penutup/.test(message)) return { message, section: "closing" };
+    return { message, section: "info" };
   });
   return { problems, content: parsed.data };
 }

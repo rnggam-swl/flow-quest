@@ -1521,3 +1521,485 @@
   width: 84px;
   flex-shrink: 0;
 }
+
+/* ── Fase 4: case, module and plan editors ──────────────────────────────── */
+
+/* Header: Kasus / Quest / Modul */
+.viewNav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--slate100);
+  border-radius: var(--rs);
+  padding: 3px;
+}
+.viewBtn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--slate600);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.viewBtn:hover {
+  color: var(--t1);
+}
+.viewBtnActive,
+.viewBtnActive:hover {
+  background: #fff;
+  color: var(--acc);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+.viewCount {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--orgs);
+  color: var(--org);
+  font-size: 10px;
+  font-weight: 600;
+}
+.canvasFlush {
+  padding: 0;
+  background: var(--bg);
+}
+
+/* Left navigation lists (case sections, closing page) */
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--t1);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.navItem:hover {
+  background: var(--bg4);
+}
+.navItemSel,
+.navItemSel:hover {
+  background: var(--accs);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: var(--acc);
+}
+
+/* Case: node library table */
+.nodeRow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.4fr) 130px minmax(0, 1fr) 56px 36px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+}
+.nodeRow .rowSel {
+  max-width: none;
+  width: 100%;
+  padding: 10px 8px;
+}
+.nodeHead {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--gray400);
+}
+.iconIn {
+  text-align: center;
+  padding: 10px 4px;
+}
+.nodeKeyCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.inputBad,
+.inputBad:focus {
+  border-color: var(--org);
+}
+.useCount {
+  font-size: 12px;
+  color: var(--slate500);
+  text-align: center;
+  cursor: help;
+}
+
+/* Case: quest list */
+.questRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--rs);
+}
+.questRow:hover {
+  background: var(--slate50);
+}
+.questRowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--t1);
+  font-size: 14px;
+  padding: 0;
+}
+.questRowBody span {
+  font-size: 12px;
+  color: var(--slate500);
+}
+.questRowBody:hover b {
+  color: var(--acc);
+}
+.questTypes {
+  letter-spacing: 2px;
+}
+.qtActs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qtActs .btn {
+  justify-content: flex-start;
+}
+
+/* Module: title line and stages */
+.helpInLine {
+  margin-top: 6px;
+}
+.colorIn {
+  width: 56px;
+  height: 44px;
+  padding: 2px;
+  border: 1px solid var(--slate200);
+  border-radius: var(--rs);
+  background: #fff;
+  cursor: pointer;
+}
+.stage {
+  padding-top: 8px;
+}
+.stageT {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--t1);
+  margin-bottom: 2px;
+}
+
+/* Widget cards */
+.widgetList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wcard {
+  background: #fff;
+  border: 1px solid var(--slate200);
+  border-radius: var(--r);
+}
+.wcardWarn {
+  border-color: rgba(217, 119, 6, 0.5);
+}
+.wcardHdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--slate100);
+}
+.wcardToggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--t1);
+}
+.wcardIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--accs);
+  color: var(--acc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.wcardType {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wcardSummary {
+  font-size: 12.5px;
+  color: var(--slate500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.wcardActs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.wcardActs .iconBtn {
+  width: 30px;
+  height: 30px;
+}
+.wcardIssues {
+  margin: 0;
+  padding: 8px 14px 8px 30px;
+  background: var(--orgs);
+  color: #92400e;
+  font-size: 12.5px;
+}
+.wcardBody {
+  padding: 14px;
+}
+.typeMenuInline {
+  right: auto;
+  min-width: 240px;
+  bottom: calc(100% + 6px);
+  top: auto;
+}
+.subCard {
+  border: 1px dashed var(--slate200);
+  border-radius: var(--rs);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--slate50);
+}
+.subCardT {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--slate500);
+}
+.optBlock {
+  margin-bottom: 10px;
+}
+.optBlock .row {
+  margin-bottom: 4px;
+}
+.fbIn {
+  width: calc(100% - 82px);
+  margin-left: 38px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--slate600);
+}
+.markBad,
+.markBad:hover {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+}
+
+/* Node chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--slate200);
+  background: #fff;
+  color: var(--slate600);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--acc);
+}
+.chipOn,
+.chipOn:hover {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: #fff;
+}
+
+/* Fixer and diagram editors */
+.fixerEd .field {
+  margin-bottom: 18px;
+}
+.edgeRow {
+  margin-bottom: 6px;
+}
+.edgeRow .rowSel {
+  flex: 1;
+  min-width: 0;
+  max-width: 220px;
+  padding: 8px;
+  font-size: 13px;
+}
+.edgeRowBad .rowSel {
+  border-color: var(--org);
+}
+.edgeArrow {
+  color: var(--slate400);
+  flex-shrink: 0;
+}
+.edgeHead {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0;
+  padding-right: 44px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--gray400);
+}
+.edgeHead span:first-child {
+  flex: 1;
+}
+.edgeHead span:not(:first-child) {
+  width: 44px;
+  text-align: center;
+}
+.edgeCheck {
+  width: 36px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--acc);
+  cursor: pointer;
+}
+.grow {
+  flex: 1;
+}
+.ruleDot {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 700;
+  color: var(--slate400);
+}
+.ruleOk {
+  color: var(--grn);
+}
+.ruleNo {
+  color: var(--red);
+}
+.ruleText {
+  margin: -2px 0 10px 4px;
+  font-size: 12px;
+  color: var(--slate500);
+}
+.fixerSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--rs);
+  background: var(--slate50);
+  margin-bottom: 18px;
+}
+.okLine {
+  font-size: 12.5px;
+  color: var(--grn);
+}
+
+/* Plan editor */
+.planGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.modPick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--slate200);
+  border-radius: var(--rs);
+  background: #fff;
+  margin-bottom: 6px;
+}
+.modPickOff {
+  opacity: 0.6;
+  background: var(--slate50);
+}
+.modPickBody {
+  flex: 1;
+  min-width: 0;
+}
+.modPickBody b {
+  display: block;
+  font-size: 14px;
+}
+.modPickBody span {
+  font-size: 12px;
+  color: var(--slate500);
+}
+.genBox {
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: var(--accs);
+  border-radius: var(--r);
+  padding: 14px;
+}
+.genRule {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.genRule input {
+  margin-top: 3px;
+}
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badgeOk {
+  background: var(--grns);
+  color: var(--grn);
+}
+.badgeNo {
+  background: var(--reds);
+  color: var(--red);
+}
+.dialogWide {
+  max-width: 720px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}

@@ -3,7 +3,9 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { CaseContent } from "@/lib/content/case";
 import { findDraftProblems, type DraftProblem } from "@/lib/content/draftProblems";
-import { canonicalJson, latestPublished, writePublishedVersion } from "@/lib/content/importCase";
+import { canonicalJson, latestPublished, repinSession, writePublishedVersion } from "@/lib/content/importCase";
+import { UNLOCKED_SESSION_WHERE } from "@/lib/content/versionLock";
+import { acceptDraftShape, describeShapeIssues } from "@/lib/content/draftShape";
 
 /**
  * The builder's working copy of a case. Each case has at most one draft,
@@ -39,22 +41,25 @@ export interface EditableCase {
   revision: string;
   publishedVersion: number | null;
   problems: DraftProblem[];
-  /** Sessions still on an older version with no participant progress yet — publishing can move them. */
+  /** Sessions of the case that aren't locked to their version (see versionLock.ts) — publishing can move them onto the new one. */
   idleSessions: number;
+  /** Sessions of the case locked to their version: active, or with participant progress. */
+  lockedSessions: number;
+  /** Set when the stored draft is missing fields the builder needs (e.g. written straight to the DB); it can only be discarded. */
+  broken: string | null;
 }
 
-/** Sessions of the case, on a version older than `exceptVersionId`, where nobody has started a quest. */
-async function idleSessionIds(scenarioId: string, exceptVersionId?: string) {
+/** Sessions of the case that aren't locked to their version. */
+async function idleSessionIds(scenarioId: string) {
   const sessions = await prisma.session.findMany({
-    where: {
-      ScenarioVersion: { scenarioId, status: "PUBLISHED" },
-      ...(exceptVersionId ? { NOT: { scenarioVersionId: exceptVersionId } } : {}),
-      SessionParticipant: { none: { QuestAttempt: { some: {} } } },
-      Team: { none: { FlowSubmission: { some: {} } } },
-    },
+    where: { ScenarioVersion: { scenarioId, status: "PUBLISHED" }, ...UNLOCKED_SESSION_WHERE },
     select: { id: true },
   });
   return sessions.map((s) => s.id);
+}
+
+async function lockedSessionCount(scenarioId: string) {
+  return prisma.session.count({ where: { ScenarioVersion: { scenarioId, status: "PUBLISHED" }, NOT: UNLOCKED_SESSION_WHERE } });
 }
 
 export async function loadEditableCase(caseKey: string): Promise<EditableCase | null> {
@@ -63,18 +68,24 @@ export async function loadEditableCase(caseKey: string): Promise<EditableCase | 
   const [draft, published] = await Promise.all([findDraftRow(scenario.id), latestPublished(prisma, scenario.id)]);
   const row = draft ?? published;
   if (!row) return null;
+  // Stored content may predate a schema default or have skipped the builder; give the editors every field they read.
+  const shaped = acceptDraftShape("case", row.content);
   const { problems } = findDraftProblems(row.content);
+  // Publishing puts every session behind the new version, including those on today's latest.
+  const [idle, locked] = await Promise.all([idleSessionIds(scenario.id), lockedSessionCount(scenario.id)]);
   return {
     scenarioId: scenario.id,
     key: caseKey,
     title: scenario.title,
     // The builder only ever writes CaseContent-shaped drafts; problems lists anything unfinished.
-    content: row.content as unknown as CaseContent,
+    content: (shaped.ok ? shaped.data : row.content) as CaseContent,
     fromDraft: Boolean(draft),
     revision: contentRevision(row.content),
     publishedVersion: published?.version ?? null,
     problems,
-    idleSessions: (await idleSessionIds(scenario.id, published?.id)).length,
+    idleSessions: idle.length,
+    lockedSessions: locked,
+    broken: shaped.ok ? null : describeShapeIssues(shaped.error),
   };
 }
 
@@ -100,6 +111,8 @@ export async function saveDraft(params: {
   if (!content || typeof content !== "object" || Array.isArray(content)) return { ok: false, status: 400, error: "Isi draf tidak valid" };
   if ((content as { key?: unknown }).key !== caseKey) return { ok: false, status: 400, error: "Kunci kasus tidak boleh diubah dari builder" };
   if (JSON.stringify(content).length > MAX_DRAFT_CHARS) return { ok: false, status: 413, error: "Draf terlalu besar" };
+  const shaped = acceptDraftShape("case", content);
+  if (!shaped.ok) return { ok: false, status: 400, error: `Isi draf tidak lengkap:\n${describeShapeIssues(shaped.error)}` };
 
   const state = await currentState(caseKey);
   if (!state) return { ok: false, status: 404, error: "Kasus tidak ditemukan" };
@@ -116,12 +129,26 @@ export async function saveDraft(params: {
   return { ok: true, value: { revision: contentRevision(content), problems: findDraftProblems(content).problems } };
 }
 
-/** Throws the draft away; the builder falls back to the latest published version. */
-export async function discardDraft(caseKey: string): Promise<DraftResult<{ revision: string | null }>> {
+/**
+ * Throws the draft away; the builder falls back to the latest published
+ * version. A case that was never published has nothing to fall back to, so
+ * discarding its draft deletes the case itself.
+ */
+export async function discardDraft(caseKey: string, baseRevision: string): Promise<DraftResult<{ revision: string | null; deletedCase: boolean }>> {
   const state = await currentState(caseKey);
   if (!state) return { ok: false, status: 404, error: "Kasus tidak ditemukan" };
-  if (state.draft) await prisma.scenarioVersion.delete({ where: { id: state.draft.id } });
-  return { ok: true, value: { revision: state.published ? contentRevision(state.published.content) : null } };
+  // Throwing work away is guarded like saving: a stale tab can't discard (or delete) what another tab saved since.
+  if (state.revision !== baseRevision) return { ok: false, status: 409, error: CONFLICT };
+  if (!state.published) {
+    // One conditional statement, so a publish landing in between can't be deleted along with the case.
+    // Sessions only ever pin published versions, so "never published" also means "no session uses it".
+    const { count } = await prisma.scenario.deleteMany({ where: { id: state.scenario.id, ScenarioVersion: { none: { status: "PUBLISHED" } } } });
+    if (!count) return { ok: false, status: 409, error: "Kasus ini baru saja dipublish dari tempat lain. Muat ulang halaman." };
+    return { ok: true, value: { revision: null, deletedCase: true } };
+  }
+  // Only the draft this tab saw; a newer save from elsewhere changes its content and is left alone.
+  if (state.draft) await prisma.scenarioVersion.deleteMany({ where: { id: state.draft.id, content: { equals: state.draft.content as object } } });
+  return { ok: true, value: { revision: contentRevision(state.published.content), deletedCase: false } };
 }
 
 export async function publishDraft(params: {
@@ -150,9 +177,10 @@ export async function publishDraft(params: {
   return prisma.$transaction(async (tx) => {
     const { created } = await writePublishedVersion(tx, state.scenario.id, content, { note: params.note ?? null, createdBy: params.userId });
     await tx.scenarioVersion.delete({ where: { id: draftId } });
-    const movedSessions = idle.length
-      ? (await tx.session.updateMany({ where: { id: { in: idle } }, data: { scenarioVersionId: created.id } })).count
-      : 0;
+    // Re-checked inside the transaction: a session may have started since `idle` was read.
+    const movable = idle.length ? await tx.session.findMany({ where: { id: { in: idle }, ...UNLOCKED_SESSION_WHERE }, select: { id: true } }) : [];
+    for (const s of movable) await repinSession(tx, s.id, { id: created.id, scenarioId: state.scenario.id, content });
+    const movedSessions = movable.length;
     return { ok: true as const, value: { status: "published" as const, version: created.version, movedSessions } };
   });
 }
@@ -165,6 +193,7 @@ export interface CaseListItem {
   hasDraft: boolean;
   draftBy: string | null;
   sessions: number;
+  modules: number;
   quests: { order: number; title: string; questions: number; types: string[] }[];
 }
 
@@ -193,7 +222,8 @@ export async function listEditableCases(): Promise<CaseListItem[]> {
       hasDraft: Boolean(draft),
       draftBy: draft?.User?.displayName ?? null,
       sessions: s.ScenarioVersion.reduce((n, v) => n + v._count.Session, 0),
-      quests: (content?.quests ?? []).map((q) => ({ order: q.order, title: q.title, questions: q.questions.length, types: q.questions.map((x) => x.type) })),
+      modules: Array.isArray(content?.modules) ? content.modules.length : 0,
+      quests: (Array.isArray(content?.quests) ? content.quests : []).filter((q) => q && Array.isArray(q.questions)).map((q) => ({ order: q.order, title: q.title, questions: q.questions.length, types: q.questions.map((x) => x.type) })),
     };
   });
 }
