@@ -32,6 +32,13 @@ export async function POST(request: Request) {
     return active.status === 409 ? NextResponse.json({ ok: true }) : NextResponse.json({ error: active.error }, { status: active.status });
   }
 
+  // Only this session's canvas for this quest: a participant's solo team from an earlier session may hold a
+  // submission for a quest with the same order, and it must never be re-scored or complete the current quest.
+  if (submission.teamId !== active.ctx.teamId || submission.questId !== active.item.questId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (submission.status !== "DRAFT") return NextResponse.json({ error: "Flow ini sudah dikirim" }, { status: 409 });
+
   const result = await finalizeFlowSubmission(submission, active.attempt, active.quest, active.ctx, parsed.data.timeExpired);
   return NextResponse.json({ result });
 }

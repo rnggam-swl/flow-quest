@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { NODE_TYPES, type CaseContent, type CaseNode } from "@/lib/content/case";
-import { addQuest, duplicateQuest, insertQuest, libraryNodesFor, moveQuest, nextNodeKey, nodeKeyUsage, questNodeKeys, removeQuest, renameNodeKey } from "@/lib/content/caseEdit";
+import { PRACTICE_NODE_KEY, addQuest, duplicateQuest, insertQuest, libraryNodesFor, moveQuest, nextNodeKey, nodeKeyUsage, questNodeKeys, removeQuest, renameNodeKey } from "@/lib/content/caseEdit";
 import type { CaseSection, DraftProblem } from "@/lib/content/draftProblems";
 import { QUESTION_TYPE_ICONS } from "@/lib/content/builderDefaults";
 import { QUESTION_TYPE_LABELS } from "@/lib/content/questions";
@@ -109,10 +109,19 @@ function InfoSection({ content, onChange, canDiscard, neverPublished, onDiscard 
   );
 }
 
-function NodeKeyInput({ node, taken, onRename }: { node: CaseNode; taken: string[]; onRename: (to: string) => void }) {
+function NodeKeyInput({ node, taken, inPractice, onRename }: { node: CaseNode; taken: string[]; inPractice: boolean; onRename: (to: string) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? node.key;
-  const error = draft === null || draft === node.key ? null : !NODE_KEY.test(draft) ? "huruf kecil, angka, _" : taken.includes(draft) ? "sudah dipakai" : null;
+  const error =
+    draft === null || draft === node.key
+      ? null
+      : !NODE_KEY.test(draft)
+        ? "huruf kecil, angka, _"
+        : inPractice && !PRACTICE_NODE_KEY.test(draft)
+          ? "dipakai Modul Latihan: tanpa _"
+          : taken.includes(draft)
+            ? "sudah dipakai"
+            : null;
   return (
     <div className={s.nodeKeyCell}>
       <input
@@ -164,7 +173,12 @@ function NodesSection({ content, onChange }: { content: CaseContent; onChange: (
                   </option>
                 ))}
               </select>
-              <NodeKeyInput node={n} taken={content.nodes.filter((_, j) => j !== i).map((x) => x.key)} onRename={(to) => onChange(renameNodeKey(content, n.key, to))} />
+              <NodeKeyInput
+                node={n}
+                taken={content.nodes.filter((_, j) => j !== i).map((x) => x.key)}
+                inPractice={uses.some((u) => u.startsWith("Modul"))}
+                onRename={(to) => onChange(renameNodeKey(content, n.key, to))}
+              />
               <span className={s.useCount} title={uses.join("\n") || "Belum dipakai kasus ini (rencana peserta mungkin masih memakainya)"}>
                 {uses.length ? `${uses.length}×` : "—"}
               </span>

@@ -104,6 +104,8 @@ function findFixerProblems(w: FixerWidget, where: string, library: Map<string, C
   const ruleNodes = w.rules.filter(isKnownRule).flatMap((r) => (r.startsWith("not:") ? [] : r.split(":").slice(1)));
   const offCanvas = [...new Set(ruleNodes)].filter((k) => !w.nodes.includes(k));
   if (offCanvas.length) p.push(`${where}: aturan memakai node yang tidak ada di daftar node latihan: ${offCanvas.join(", ")}`);
+  const twice = duplicates([...w.initial, ...(w.extra ?? [])]);
+  if (twice.length) p.push(`${where}: sambungan terduplikasi: ${twice.join(", ")}`);
   const unreachable = w.solution.filter((e) => !available.has(e));
   if (unreachable.length) p.push(`${where}: contoh jawaban memakai sambungan yang tidak bisa dinyalakan: ${unreachable.join(", ")}`);
   if (unknown.length || unknownRules.length || offCanvas.length) return p;

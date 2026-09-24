@@ -582,6 +582,9 @@ export function WidgetList<W extends ModuleWidget | PlanWidget>({
 }) {
   const { nodes } = useBuilder();
   const [json, setJson] = useState<Set<number>>(new Set());
+  // Bumped on every reorder/insert/delete: remounts the cards so no local editor state (a JSON box's text)
+  // stays attached to an index that now holds a different widget.
+  const [layout, setLayout] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const toggle = (set: Set<number>, i: number) => new Set(set.has(i) ? [...set].filter((x) => x !== i) : [...set, i]);
   // Index-based view state follows a moved or removed card.
@@ -595,12 +598,13 @@ export function WidgetList<W extends ModuleWidget | PlanWidget>({
         const isCollapsed = collapsed.has(i);
         const move = (to: number) => {
           onChange(moveItem(widgets, i, to));
+          setLayout((n) => n + 1);
           const swap = (x: number) => (x === i ? to : x === to ? i : x);
           setJson((s0) => shift(s0, swap));
           setCollapsed((s0) => shift(s0, swap));
         };
         return (
-          <div key={i} className={cx(s.wcard, issues.length > 0 && s.wcardWarn)}>
+          <div key={`${layout}:${i}`} className={cx(s.wcard, issues.length > 0 && s.wcardWarn)}>
             <div className={s.wcardHdr}>
               <button type="button" className={s.wcardToggle} onClick={() => setCollapsed((c) => toggle(c, i))} aria-expanded={!isCollapsed}>
                 <span className={s.wcardIcon}>{WIDGET_TYPE_ICONS[w.type]}</span>
@@ -619,7 +623,18 @@ export function WidgetList<W extends ModuleWidget | PlanWidget>({
                 <button type="button" className={s.iconBtn} title="Turun" disabled={i === widgets.length - 1} onClick={() => move(i + 1)}>
                   ↓
                 </button>
-                <button type="button" className={s.iconBtn} title="Duplikat" onClick={() => onChange([...widgets.slice(0, i + 1), structuredClone(w), ...widgets.slice(i + 1)])}>
+                <button
+                  type="button"
+                  className={s.iconBtn}
+                  title="Duplikat"
+                  onClick={() => {
+                    onChange([...widgets.slice(0, i + 1), structuredClone(w), ...widgets.slice(i + 1)]);
+                    const after = (x: number) => (x > i ? x + 1 : x);
+                    setJson((s0) => shift(s0, after));
+                    setCollapsed((s0) => shift(s0, after));
+                    setLayout((n) => n + 1);
+                  }}
+                >
                   ⧉
                 </button>
                 <Del
@@ -630,6 +645,7 @@ export function WidgetList<W extends ModuleWidget | PlanWidget>({
                     const drop = (x: number) => (x === i ? null : x > i ? x - 1 : x);
                     setJson((s0) => shift(s0, drop));
                     setCollapsed((s0) => shift(s0, drop));
+                    setLayout((n) => n + 1);
                   }}
                 />
               </div>

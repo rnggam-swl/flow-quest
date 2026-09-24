@@ -116,6 +116,9 @@ describe("scoreQuestion", () => {
     const h = q({ type: "hotspot", id: "a", prompt: "?", image: { kind: "image", url: "x.png" }, spots: [{ x: 10, y: 10, radius: 5 }, { x: 12, y: 12, radius: 5 }] });
     expect(scoreQuestion(h, { marks: [{ x: 11, y: 11 }] })).toEqual({ correct: 1, total: 2 });
     expect(scoreQuestion(h, { marks: [{ x: 11, y: 11 }, { x: 12, y: 12 }] })).toEqual({ correct: 2, total: 2 });
+    // Only as many marks as there are spots are read, so carpeting the image earns nothing extra.
+    const grid = Array.from({ length: 400 }, (_, i) => ({ x: (i % 20) * 5, y: Math.floor(i / 20) * 5 }));
+    expect(scoreQuestion(h, { marks: grid }).correct).toBeLessThan(2);
   });
 
   it("branching scores the choices made on the way to an ending", () => {
@@ -134,6 +137,9 @@ describe("scoreQuestion", () => {
     expect(scoreQuestion(b, { choices: [0, 0] })).toEqual({ correct: 2, total: 2 });
     expect(scoreQuestion(b, { choices: [0, 1] })).toEqual({ correct: 1, total: 2 });
     expect(scoreQuestion(b, { choices: [1, 0] })).toEqual({ correct: 0, total: 1 });
+    // Stopping before an ending owes a choice: one right answer isn't full marks.
+    expect(scoreQuestion(b, { choices: [0] })).toEqual({ correct: 1, total: 2 });
+    expect(scoreQuestion(b, { choices: [] })).toEqual({ correct: 0, total: 1 });
   });
 });
 

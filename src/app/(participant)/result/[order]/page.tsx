@@ -33,12 +33,14 @@ export default async function QuestResultPage({ params }: { params: Promise<{ or
   });
 
   const flow = flowQuestionOf(quest);
-  if (flow) {
-    const submission = await prisma.flowSubmission.findUnique({
-      where: { teamId_questId: { teamId: ctx.teamId, questId: item.questId } },
-      include: { Score: true, FlowNode: true, FlowConnection: true },
-    });
-    if (!submission?.Score) redirect("/brief");
+  const submission = flow
+    ? await prisma.flowSubmission.findUnique({
+        where: { teamId_questId: { teamId: ctx.teamId, questId: item.questId } },
+        include: { Score: true, FlowNode: true, FlowConnection: true },
+      })
+    : null;
+  // A quest can end (e.g. its timer ran out) before its flow canvas was ever submitted; then only the quiz part has a result.
+  if (flow && submission?.Score) {
     // Tier and feedback come from re-running the pinned rubric on the saved canvas; the numbers are the Score saved at submit time.
     const { tier, message, max } = scoreSubmission(ctx.content, quest, submission);
     const reflection = flow.reflection
@@ -88,6 +90,11 @@ export default async function QuestResultPage({ params }: { params: Promise<{ or
           ? "Waktu habis — soal yang belum dijawab dihitung kosong."
           : `Selesai dalam ${Math.floor(elapsed / 60)}m ${String(elapsed % 60).padStart(2, "0")}s.`}
       </p>
+      {flow && (
+        <p className="mb-6 rounded-[10px] border border-border bg-surface px-4 py-3 text-center text-[13.5px] text-muted">
+          Flow di quest ini belum sempat dikirim, jadi bagian flow tidak dinilai.
+        </p>
+      )}
       <QuizReview items={reviewed} showSummary />
       <Link
         href={next.href}

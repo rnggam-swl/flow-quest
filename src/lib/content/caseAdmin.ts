@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { caseContentSchema, type CaseContent } from "@/lib/content/case";
+import { acceptDraftShape, describeShapeIssues } from "@/lib/content/draftShape";
 import { blankCase, duplicateCaseContent, isValidCaseKey } from "@/lib/content/caseEdit";
 import { DRAFT_VERSION, type DraftResult } from "@/lib/content/drafts";
 import { latestPublished, repinSession } from "@/lib/content/importCase";
@@ -73,12 +74,9 @@ export async function createCase(params: { key: string; title: string; userId: s
  * asked to. Nothing is published; the author reviews it in the builder first.
  */
 export async function importCaseAsDraft(params: { raw: unknown; userId: string; replaceDraft: boolean }): Promise<DraftResult<{ key: string; created: boolean }>> {
-  const parsed = caseContentSchema.safeParse(params.raw);
-  // The builder's own shape check already ran client-side; this is the server's guard.
-  const content = (parsed.success ? parsed.data : params.raw) as CaseContent;
-  if (!content || typeof content !== "object" || !Array.isArray(content.quests) || !Array.isArray(content.nodes)) {
-    return { ok: false, status: 400, error: "Isi file bukan kasus." };
-  }
+  const shaped = acceptDraftShape("case", params.raw);
+  if (!shaped.ok) return { ok: false, status: 400, error: `Isi file bukan kasus yang bisa dibuka builder:\n${describeShapeIssues(shaped.error)}` };
+  const content = shaped.data;
   const invalid = checkKeyAndTitle(String(content.key ?? ""), String(content.title ?? ""));
   if (invalid) return { ok: false, status: 400, error: invalid };
   if (JSON.stringify(content).length > 2_000_000) return { ok: false, status: 413, error: "File kasus terlalu besar." };

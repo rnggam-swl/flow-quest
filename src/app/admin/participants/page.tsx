@@ -2,6 +2,7 @@ import { getManagedSession } from "@/lib/managedSession";
 import { prisma } from "@/lib/prisma";
 import { Eyebrow, Headline, Sub } from "@/components/ui";
 import { ParticipantsManager } from "./ParticipantsManager";
+import { randomPassword } from "@/lib/randomPassword";
 
 export default async function AdminParticipantsPage() {
   const session = await getManagedSession();
@@ -30,6 +31,7 @@ export default async function AdminParticipantsPage() {
       </Sub>
 
       <ParticipantsManager
+        initialPassword={randomPassword()}
         existing={existing.map((p) => ({
           userId: p.participantId,
           name: p.User.displayName,

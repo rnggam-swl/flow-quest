@@ -177,6 +177,15 @@ export function QuestBuilder({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  /** Whole-case edits (the Kasus view, imports): if the open quest was removed or renumbered away, fall back to the nearest one. */
+  const replaceContent = (next: CaseContent) => {
+    setContent(next);
+    if (next.quests.length && !next.quests.some((q) => q.order === questOrder)) {
+      setQuestOrder(Math.min(questOrder, next.quests.length));
+      setSelected(0);
+    }
+  };
+
   const updateQuest = (fn: (q: QuestContent) => QuestContent) =>
     setContent((c) => ({ ...c, quests: c.quests.map((q) => (q.order === questOrder ? fn(q) : q)) }));
   const setQuestions = (fn: (qs: Question[]) => Question[]) => updateQuest((q) => ({ ...q, questions: fn(q.questions) }));
@@ -259,9 +268,13 @@ export function QuestBuilder({
 
   async function discard() {
     setBusy("discard");
-    const res = await send(`/api/admin/content/${initial.caseKey}/draft`, "DELETE").catch(() => null);
+    const res = await send(`/api/admin/content/${initial.caseKey}/draft?rev=${encodeURIComponent(revision)}`, "DELETE").catch(() => null);
     setBusy(null);
     setDialog(null);
+    if (res?.status === 409) {
+      setDialog("conflict");
+      return;
+    }
     if (!res?.ok) {
       toast(res?.data?.error ?? "Gagal membuang draf.", "error");
       return;
@@ -407,7 +420,7 @@ export function QuestBuilder({
               <CaseEditor
                 content={content}
                 section={caseSection}
-                onChange={setContent}
+                onChange={replaceContent}
                 onOpenQuest={(order) => {
                   setQuestOrder(order);
                   setSelected(0);

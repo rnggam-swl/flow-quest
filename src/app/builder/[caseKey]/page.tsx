@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loadEditableCase } from "@/lib/content/drafts";
 import { mediaUploadConfigured } from "@/lib/mediaStorage";
 import { QuestBuilder, type BuilderView } from "@/components/builder/QuestBuilder";
+import { BrokenDraft } from "@/components/builder/BrokenDraft";
 
 export const metadata: Metadata = { title: "Builder" };
 
@@ -18,7 +19,8 @@ export default async function BuilderPage({
   const [{ caseKey }, { quest, view, modul }] = await Promise.all([params, searchParams]);
   const editable = await loadEditableCase(caseKey);
   if (!editable) notFound();
-  const { key, title, content, revision, fromDraft, publishedVersion, idleSessions, lockedSessions } = editable;
+  const { key, title, content, revision, fromDraft, publishedVersion, idleSessions, lockedSessions, broken } = editable;
+  if (broken) return <BrokenDraft caseKey={key} title={title} revision={revision} details={broken} published={publishedVersion !== null} />;
   return (
     <QuestBuilder
       // A new revision (after publishing or discarding) starts the builder over from the server's copy.

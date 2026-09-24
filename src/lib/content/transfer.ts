@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { caseContentSchema, libraryNodeSchema, moduleContentSchema, questContentSchema, type CaseContent, type CaseNode, type ModuleContent, type QuestContent } from "@/lib/content/case";
+import { libraryNodeSchema, type CaseContent, type CaseNode, type ModuleContent, type QuestContent } from "@/lib/content/case";
 import { practicePlanContentSchema, type PracticePlanContent } from "@/lib/practice/schema";
+import { acceptDraftShape, describeShapeIssues } from "@/lib/content/draftShape";
 
 /**
  * JSON export and import for content: a whole case, one quest, one module, or
@@ -39,13 +40,6 @@ export function transferFileName(...parts: (string | number)[]): string {
     .join("-");
   return `${stem || "konten"}.json`;
 }
-
-const SCHEMAS = {
-  case: caseContentSchema,
-  quest: questContentSchema,
-  module: moduleContentSchema,
-  plan: practicePlanContentSchema,
-} as const;
 
 type DataOf<K extends TransferKind> = K extends "case" ? CaseContent : K extends "quest" ? QuestContent : K extends "module" ? ModuleContent : PracticePlanContent;
 
@@ -95,9 +89,14 @@ export function readTransfer<K extends TransferKind>(text: string, kind: K): Tra
     void _e;
     data = rest;
   }
-  const parsed = (SCHEMAS[kind] as z.ZodType).safeParse(data);
-  if (parsed.success) return { ok: true, data: parsed.data as DataOf<K>, nodes };
-  // Empty text is only unfinished content (an export of a draft, say) — the problem list flags it after import.
-  if (kind !== "plan" && parsed.error.issues.every((i) => i.code === "too_small" && i.origin === "string")) return { ok: true, data: data as unknown as DataOf<K>, nodes };
-  return { ok: false, error: `Isi ${TRANSFER_LABELS[kind]} tidak sesuai format:\n${z.prettifyError(parsed.error)}` };
+  if (kind === "plan") {
+    const parsed = practicePlanContentSchema.safeParse(data);
+    if (parsed.success) return { ok: true, data: parsed.data as DataOf<K>, nodes };
+    return { ok: false, error: `Isi ${TRANSFER_LABELS[kind]} tidak sesuai format:\n${z.prettifyError(parsed.error)}` };
+  }
+  // Unfinished content (an export of a draft, say) is fine — the problem list flags it after import —
+  // as long as it has every field the editors read.
+  const shaped = acceptDraftShape(kind as Exclude<TransferKind, "plan">, data);
+  if (shaped.ok) return { ok: true, data: shaped.data as DataOf<K>, nodes };
+  return { ok: false, error: `Isi ${TRANSFER_LABELS[kind]} tidak sesuai format:\n${describeShapeIssues(shaped.error)}` };
 }

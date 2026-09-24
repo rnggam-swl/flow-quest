@@ -153,9 +153,21 @@ interface Row {
   sol: boolean;
 }
 
+/**
+ * One row per available arrow, in order: switched on, then off, then any the
+ * solution names that isn't available yet. Duplicates stay as separate rows
+ * (and are flagged) so a row being edited never merges into another and vanishes.
+ */
 function rowsOf(w: FixerWidget): Row[] {
-  const all = [...new Set([...w.initial, ...(w.extra ?? []), ...w.solution])];
-  return all.map((edge) => ({ edge, on: w.initial.includes(edge), sol: w.solution.includes(edge) }));
+  const solLeft = [...w.solution];
+  const takeSol = (edge: string) => {
+    const j = solLeft.indexOf(edge);
+    if (j < 0) return false;
+    solLeft.splice(j, 1);
+    return true;
+  };
+  const rows = [...w.initial.map((edge) => ({ edge, on: true })), ...(w.extra ?? []).map((edge) => ({ edge, on: false }))].map((r) => ({ ...r, sol: takeSol(r.edge) }));
+  return [...rows, ...solLeft.map((edge) => ({ edge, on: false, sol: true }))];
 }
 
 function fromRows(w: FixerWidget, rows: Row[]): FixerWidget {
