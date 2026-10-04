@@ -53,3 +53,6 @@ tsconfig.tsbuildinfo
 # Modul Latihan plans carry mentors' personal notes about real participants — keep them out of git
 /prisma/practice-plans/*.json
 !/prisma/practice-plans/example.json
+
+# Database backups hold users' password hashes and answers — keep them out of git
+/backups
